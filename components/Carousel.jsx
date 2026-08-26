@@ -12,6 +12,7 @@ import {
 } from "./shaders/planeShaders";
 import { buildAtlas } from "./ring/atlas";
 import { createMeta } from "./ring/meta";
+import { isAppleTouchDevice } from "./ring/platform";
 import { createSplitText } from "./ring/splitText";
 import { createTag, TAG_W, TAG_H } from "./ring/tag";
 import { defaultParams } from "./ring/params";
@@ -169,6 +170,14 @@ export default function Carousel() {
         live: liveRef.current,
       },
       params,
+      // Safari on Apple touch devices can software-render the goo morph and
+      // stall the compositor the ring's rAF shares; those devices get a plain
+      // crossfade instead, which also covers prefers-reduced-motion.
+      {
+        simpleMorph: isAppleTouchDevice(),
+        reduceMotion: window.matchMedia("(prefers-reduced-motion: reduce)")
+          .matches,
+      },
     );
 
     /* ---------------------------------------------------------------- art */
