@@ -44,6 +44,8 @@ export default function Carousel() {
   const loaderRef = useRef(null);
   const liveRef = useRef(null);
   const cutRef = useRef(null);
+  const pickRef = useRef(null); // pick(), handed to the list items outside the effect
+  const interactiveRef = useRef(false);
   // Per side: the box that positions the lockup, the filtered wrapper the goo
   // happens inside, the two rows that melt within it, and one more row outside
   // for words carrying over unchanged. See ring/meta.js.
@@ -351,6 +353,7 @@ export default function Carousel() {
         },
       });
     };
+    pickRef.current = pick; // the JSX list items live outside this closure
 
     /* ------------------------------------------------------------ pointer */
     // World px, origin at screen centre, Y up — the space the shader works in,
@@ -974,6 +977,7 @@ export default function Carousel() {
 
     const build = () => {
       interactive = false;
+      interactiveRef.current = false;
       announced = -1;
       spinVel = 0;
       dragging = false;
@@ -991,6 +995,7 @@ export default function Carousel() {
         delay: 0.25,
         onComplete: () => {
           interactive = true;
+          interactiveRef.current = true;
         },
       });
 
@@ -1316,10 +1321,8 @@ export default function Carousel() {
           is the carousel. */}
       <div ref={containerRef} className="fixed inset-0 touch-none" />
 
-      {/* Never takes the pointer: the canvas underneath handles the wheel and
-          the drag, and the column has no business interrupting a throw that
-          happens to pass under it. Sized from styleMeta, not a class, so it
-          takes the narrow bump with every other label. */}
+      {/* Titles are activatable and turn the ring via pickRef; gaps stay
+          pointer-transparent so drags and throws pass through. */}
       <ul
         ref={listRef}
         aria-label="Projects"
@@ -1334,9 +1337,21 @@ export default function Carousel() {
             ref={(el) => {
               itemsRef.current[i] = el;
             }}
+            role="button"
+            tabIndex={0}
+            aria-label={`Show ${p.name}`}
+            onClick={() => {
+              if (interactiveRef.current) pickRef.current?.(i);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              if (interactiveRef.current) pickRef.current?.(i);
+            }}
             // No transition, deliberately: the colour turns over the moment
             // the ring passes the halfway point between two slots.
             style={{ opacity: 0.2 }}
+            className="pointer-events-auto cursor-pointer outline-offset-4 focus-visible:outline focus-visible:outline-1"
           >
             {p.name}
           </li>
