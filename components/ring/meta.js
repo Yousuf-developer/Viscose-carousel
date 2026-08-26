@@ -48,7 +48,17 @@ function fade(el, f, blur) {
   }
 }
 
-function createGroup(side, groups, params) {
+// Same scale direction as the goo morph, minus the blur and SVG threshold
+// that can push Safari on Apple touch devices into software rendering while
+// the WebGL ring is running. Compositor-friendly, so it cannot stall rAF.
+function safeMorph(el, opacity, scale) {
+  if (!el) return;
+  el.style.filter = "none";
+  el.style.opacity = `${opacity}`;
+  el.style.transform = `scale(${scale})`;
+}
+
+function createGroup(side, groups, params, simpleMorph, reduceMotion) {
   const m = { t: 1 };
   // What is on screen, and which of it the morph in flight is moving. Both
   // rows are rewritten on every change rather than trading places: a word can
@@ -67,8 +77,13 @@ function createGroup(side, groups, params) {
 
     for (let j = 0; j < SLOTS; j++) {
       if (moving[j]) {
-        fade(out?.[j], 1 - t, params.nameBlur);
-        fade(into?.[j], t, params.nameBlur);
+        if (simpleMorph) {
+          safeMorph(out?.[j], 1 - t, 1 + params.nameSimpleScale * t);
+          safeMorph(into?.[j], t, 1 - params.nameSimpleScale * (1 - t));
+        } else {
+          fade(out?.[j], 1 - t, params.nameBlur);
+          fade(into?.[j], t, params.nameBlur);
+        }
         if (held?.[j]) held[j].style.opacity = "0";
       } else {
         if (out?.[j]) out[j].style.opacity = "0";
@@ -82,7 +97,9 @@ function createGroup(side, groups, params) {
     // type that is set and type that is stamped.
     if (g.goo) {
       g.goo.style.filter =
-        t >= 1 ? "none" : `url(#name-goo) blur(${params.nameSoften}px)`;
+        simpleMorph || t >= 1
+          ? "none"
+          : `url(#name-goo) blur(${params.nameSoften}px)`;
     }
   };
 
@@ -122,13 +139,32 @@ function createGroup(side, groups, params) {
 
     m.t = 0;
     draw();
+    if (reduceMotion) {
+      // No animation at all: land the incoming word straight away.
+      m.t = 1;
+      draw();
+      return;
+    }
     gsap.to(m, {
       t: 1,
-      duration: params.nameMorphTime,
-      ease: params.nameEase,
+      duration: simpleMorph ? params.nameSimpleTime : params.nameMorphTime,
+      ease: simpleMorph ? params.nameSimpleEase : params.nameEase,
       onUpdate: draw,
     });
   };
+
+  // On the fallback path, hand the slots to the compositor explicitly and
+  // drop the goo layer's own hint — it is never filtered there.
+  if (simpleMorph) {
+    const g = groups[side];
+    if (g?.goo) g.goo.style.willChange = "auto";
+    for (const layer of g?.layers ?? []) {
+      for (const slot of slotsOf(layer) ?? []) {
+        slot.style.transformOrigin = "center";
+        slot.style.willChange = reduceMotion ? "auto" : "opacity, transform";
+      }
+    }
+  }
 
   return { m, set };
 }
@@ -137,10 +173,14 @@ function createGroup(side, groups, params) {
  * refs: { groups, list, loader, cut, live } — DOM handed over from the
  * component. `groups` is the shape the JSX populates, one entry per side.
  */
-export function createMeta(refs, params) {
+export function createMeta(
+  refs,
+  params,
+  { simpleMorph = false, reduceMotion = false } = {},
+) {
   const { groups, list, loader, cut, live } = refs;
-  const left = createGroup("left", groups, params);
-  const right = createGroup("right", groups, params);
+  const left = createGroup("left", groups, params, simpleMorph, reduceMotion);
+  const right = createGroup("right", groups, params, simpleMorph, reduceMotion);
 
   // Only the alpha row does any work; colour passes straight through.
   const setThreshold = () => {

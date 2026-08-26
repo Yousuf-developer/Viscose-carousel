@@ -138,6 +138,12 @@ export function defaultParams() {
 
     // The morph between one card's words and the next.
     nameMorphTime: 1.2,
+    // Apple touch fallback: Safari there can software-render the goo filter +
+    // blur and stall the compositor the WebGL loop shares, so those devices
+    // get a plain transform + opacity crossfade instead.
+    nameSimpleTime: 0.4,
+    nameSimpleEase: "circ.inOut",
+    nameSimpleScale: 0.2, // matches the 0.8 -> 1 -> 1.2 scale motion of the goo
     nameEase: "circ.out",
     nameBlur: 8.5, // px the outgoing word smears to before it lets go
     nameEdge: 400, // alpha gain — how abruptly the threshold sets

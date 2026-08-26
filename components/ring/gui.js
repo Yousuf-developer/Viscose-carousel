@@ -163,6 +163,10 @@ export function mountGui(GUI, { params, state, info, actions }) {
   meta.add(params, "idxWeight", WEIGHTS).name("number weight").onChange(styleMeta); // prettier-ignore
   meta.add(params, "nameMorphTime", 0.1, 4, 0.05).name("morph time");
   meta.add(params, "nameEase", EASES).name("ease");
+  // The Apple-touch fallback morph; only visible on those devices.
+  meta.add(params, "nameSimpleTime", 0.1, 4, 0.05).name("simple morph time");
+  meta.add(params, "nameSimpleEase", EASES).name("simple ease");
+  meta.add(params, "nameSimpleScale", 0, 1, 0.01).name("simple scale");
   meta.add(params, "nameBlur", 0, 40, 0.5).name("smear");
   meta.add(params, "nameEdge", 8, 800, 1).name("threshold gain").onChange(setThreshold); // prettier-ignore
   meta.add(params, "nameCut", 0.05, 0.95, 0.01).name("threshold cut").onChange(setThreshold); // prettier-ignore
