@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Viscose end card</title>
+    <style>
+      @font-face {
+        font-family: "Satoshi";
+        src: url("/Satoshi-Regular.otf") format("opentype");
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: "Satoshi";
+        src: url("/Satoshi-Medium.otf") format("opentype");
+        font-weight: 500;
+      }
+      @font-face {
+        font-family: "Geist";
+        src: url("/Geist-Regular.ttf") format("truetype");
+        font-weight: 400;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #fafafa;
+        color: #0a0a0a;
+        overflow: hidden;
+      }
+      .stack {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .kicker {
+        font:
+          400 20px "Geist",
+          sans-serif;
+        letter-spacing: -0.01em;
+        color: rgba(10, 10, 10, 0.55);
+        font-variant-numeric: tabular-nums;
+        margin-bottom: 18px;
+      }
+      .kicker b {
+        font-weight: 400;
+        color: #0a0a0a;
+      }
+      /* The title melts in the way the site's labels do: blurred, then run
+         through an alpha threshold so the soft edge sets as one shape. */
+      .titlebox {
+        position: relative;
+        margin: -30px 0;
+      }
+      .goo,
+      .clean {
+        padding: 30px 60px;
+      }
+      .clean {
+        position: absolute;
+        inset: 0;
+      }
+      .title {
+        font:
+          500 104px "Satoshi",
+          sans-serif;
+        letter-spacing: -0.035em;
+        line-height: 1;
+      }
+      .sub {
+        font:
+          400 25px "Satoshi",
+          sans-serif;
+        letter-spacing: -0.005em;
+        color: rgba(10, 10, 10, 0.6);
+        margin-top: 26px;
+      }
+      .url {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font:
+          400 22px "Geist",
+          sans-serif;
+        letter-spacing: -0.01em;
+        margin-top: 40px;
+        padding: 12px 20px 12px 22px;
+        border-radius: 999px;
+        background: #0a0a0a;
+        color: #fafafa;
+      }
+      .url img {
+        width: 16px;
+        height: 16px;
+        filter: invert(1);
+      }
+      .fine {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 26px;
+        text-align: center;
+        font:
+          400 14px "Satoshi",
+          sans-serif;
+        color: rgba(10, 10, 10, 0.4);
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <filter
+        id="name-goo"
+        x="-20%"
+        y="-60%"
+        width="140%"
+        height="220%"
+        color-interpolation-filters="sRGB"
+      >
+        <feColorMatrix
+          id="cut"
+          type="matrix"
+          values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 400 -132"
+        />
+      </filter>
+    </svg>
+
+    <div class="stack">
+      <div class="kicker" id="kicker">
+        <b id="count">000</b> stars on GitHub. Thank you.
+      </div>
+      <div class="titlebox">
+        <div class="goo" id="goo">
+          <div class="title" id="title">Viscose</div>
+        </div>
+        <div class="clean" id="clean"><div class="title">Viscose</div></div>
+      </div>
+      <div class="sub" id="sub">
+        A portfolio carousel drawn by a single WebGL shader.
+      </div>
+      <div class="url" id="url">
+        <span>github.com/Yousuf-developer/Viscose-carousel</span>
+        <img src="/arrow-top-right-svgrepo-com.svg" alt="" />
+      </div>
+    </div>
+    <div class="fine" id="fine">
+      Images are placeholder work by artists on Behance, used for layout only.
+    </div>
+
+    <script>
+      const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+      const span = (t, a, b) => clamp01((t - a) / (b - a));
+      const circOut = (x) => Math.sqrt(1 - Math.pow(x - 1, 2));
+      const expoOut = (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+      const p3out = (x) => 1 - Math.pow(1 - x, 3);
+
+      const $ = (id) => document.getElementById(id);
+      const rise = (el, f, px = 14) => {
+        el.style.opacity = String(f);
+        el.style.transform = `translateY(${(1 - f) * px}px)`;
+      };
+
+      // Pure function of time, so the recorder can ask for any frame.
+      window.renderAt = (t) => {
+        // Title: blurred hard and run through the site's own alpha threshold,
+        // so it condenses out of a droplet into letters instead of fading.
+        // The thresholded copy hands over to a clean one at the very end, the
+        // way the site drops its filter once a morph lands.
+        const m = span(t, 0.25, 1.75);
+        const blur = 24 * Math.pow(1 - m, 2.2);
+        const title = $("title");
+        const goo = $("goo");
+        const clean = $("clean");
+        const hand = span(t, 1.5, 1.75);
+        if (m <= 0) {
+          goo.style.opacity = "0";
+        } else {
+          goo.style.opacity = String(1 - hand);
+          goo.style.filter = hand >= 1 ? "none" : "url(#name-goo) blur(0.35px)";
+          title.style.filter = blur > 0.01 ? `blur(${blur}px)` : "none";
+        }
+        clean.style.opacity = String(hand);
+
+        rise($("sub"), p3out(span(t, 0.75, 1.55)));
+        rise($("url"), p3out(span(t, 1.0, 1.8)));
+        rise($("kicker"), p3out(span(t, 0.45, 1.25)), 10);
+
+        // The stars count up the way the loader counts to 100.
+        const n = Math.round(500 * expoOut(span(t, 0.5, 2.3)));
+        $("count").textContent = String(n).padStart(3, "0");
+
+        $("fine").style.opacity = String(p3out(span(t, 1.6, 2.4)));
+      };
+      window.renderAt(0);
+    </script>
+  </body>
+</html>
