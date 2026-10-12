@@ -2,8 +2,11 @@ import gsap from "gsap";
 import { PROJECTS } from "./projects";
 
 /**
- * The two lockups of type either side of the ring: [number . name] on the
- * left, [type . year] on the right. Both read whatever card is facing front.
+ * The project block beside the ring: the title on one row, [type . year] on
+ * the row under it, and a counter over both. Two groups, kept from when they
+ * sat either side of the card — the left one carries [number . name] and now
+ * paints only the name, the right one [type . year]. Both read whatever card
+ * is facing front.
  *
  * Changing card melts one set of words into the next. Two copies are stacked,
  * one blurred out as the other blurs in, and the pair run through an alpha
@@ -67,8 +70,10 @@ function createGroup(side, groups, params) {
 
     for (let j = 0; j < SLOTS; j++) {
       if (moving[j]) {
-        fade(out?.[j], 1 - t, params.nameBlur);
-        fade(into?.[j], t, params.nameBlur);
+        // Each group smears in proportion to its own size, or the big name
+        // would read as a crossfade and the small rows as a smudge.
+        fade(out?.[j], 1 - t, g.blur ?? params.nameBlur);
+        fade(into?.[j], t, g.blur ?? params.nameBlur);
         if (held?.[j]) held[j].style.opacity = "0";
       } else {
         if (out?.[j]) out[j].style.opacity = "0";
@@ -88,7 +93,9 @@ function createGroup(side, groups, params) {
 
   // parts[0] is the leading slot, parts[1] the trailing one. Which of those is
   // the big half depends on the side and is decided in style() below.
-  const set = (parts) => {
+  // `dur` lets a caller fit the melt to a motion it is paired with; the pick
+  // ends it as the card arrives, so the open starts from settled type.
+  const set = (parts, dur) => {
     const g = groups[side];
     if (!g?.layers[0] || !g.layers[1] || !g.plain) return;
     gsap.killTweensOf(m);
@@ -124,13 +131,20 @@ function createGroup(side, groups, params) {
     draw();
     gsap.to(m, {
       t: 1,
-      duration: params.nameMorphTime,
+      duration: dur ?? params.nameMorphTime,
       ease: params.nameEase,
       onUpdate: draw,
     });
   };
 
-  return { m, set };
+  // Finish whatever morph is in flight, now.
+  const settle = () => {
+    gsap.killTweensOf(m);
+    m.t = 1;
+    draw();
+  };
+
+  return { m, set, settle };
 }
 
 /**
@@ -138,7 +152,7 @@ function createGroup(side, groups, params) {
  * component. `groups` is the shape the JSX populates, one entry per side.
  */
 export function createMeta(refs, params) {
-  const { groups, list, loader, cut, live } = refs;
+  const { groups, loader, cut, live, count } = refs;
   const left = createGroup("left", groups, params);
   const right = createGroup("right", groups, params);
 
@@ -153,108 +167,176 @@ export function createMeta(refs, params) {
     );
   };
 
-  // layout: { textK, tight, viewW } — the band state, passed in rather than
-  // read, so this stays a pure function of the window it is told about.
-  const style = ({ textK, tight, viewW }) => {
-    // Everything downstream is derived from this one figure: the box height,
-    // so the filter region, so where the corner offset has to drop the box to.
-    const bigVw = params.nameSize * textK * (tight ? params.tightName : 1);
-    const big = `${bigVw}vw`;
-    const small = `${params.idxSize * textK}vw`;
+  // layout: { textK, viewW, titleVw, blockX, blockW, blockY, under, cardTop }
+  // — the geometry the block hangs off, passed in rather than read, so this
+  // stays a pure function of the window it is told about. `under`, on a
+  // phone, is the top of the space under the card, where the block goes
+  // instead of beside it. The name's size comes in resolved (titleVwNow in
+  // the component), so the page's title can be set from the very same figure.
+  const style = ({
+    textK,
+    viewW,
+    titleVw,
+    blockX,
+    blockW,
+    blockY,
+    under,
+    cardTop,
+  }) => {
+    const gapPx = (params.titleGap / 100) * (viewW * 0.65);
+    const titlePx = (titleVw * viewW) / 100;
+    // In px with floors: in vw alone the small type fell to 6px on a phone.
+    const metaPx = Math.max(
+      params.metaMin,
+      (params.metaSize * textK * viewW) / 100,
+    );
+    const smallPx = Math.max(
+      params.smallMin,
+      (params.idxSize * textK * viewW) / 100,
+    );
+    // The counter's line and the block's, centred on blockY beside the card,
+    // or hung from the top of the space under it.
+    const midY = under != null ? under + smallPx * 0.5 + metaPx * 0.75 : blockY;
+    const titleFace = `"${params.textFont}", "${params.textFallback}", ui-sans-serif, system-ui, sans-serif`;
     const bigFace = `"${params.nameFont}", ui-sans-serif, system-ui, sans-serif`;
     const smallFace = `"${params.idxFont}", ui-sans-serif, system-ui, sans-serif`;
-    const bigWeight = `${params.nameWeight}`;
-    const smallWeight = `${params.idxWeight}`;
-    // Roomy, because this box is what the filter region is measured off and
-    // the blur needs somewhere to go.
-    const h = bigVw * 3;
 
     for (const side of SIDES) {
       const g = groups[side];
       if (!g?.box) continue;
-      const isRight = side === "right";
-
-      // In the tight band the ring is most of the screen and there is nowhere
-      // for two lockups to sit, so three of the four labels go and the name
-      // alone moves to the bottom-right corner.
-      const corner = tight && !isRight;
-      if (tight && isRight) {
-        g.box.style.display = "none";
-        continue;
-      }
+      // The left group is the name; the right is discipline and year.
+      const isTitle = side === "left";
       g.box.style.display = "";
 
-      g.box.style.width = `${corner ? params.tightMetaWidth : params.metaWidth}vw`; // prettier-ignore
-      g.box.style.height = `${h}vw`;
+      const rowPx = isTitle ? titlePx : metaPx;
+      g.blur = isTitle ? titlePx * params.titleBlur : params.nameBlur;
+      // Roomy, because this box is what the filter region is measured off and
+      // the blur needs somewhere to go.
+      const h = rowPx * 3;
+      g.box.style.height = `${h}px`;
 
-      if (corner) {
-        // The box is three times the type's height, so placing it at the
-        // offset asked for would sit the words half a box too high. Drop it by
-        // the difference and the type lands where the number says.
-        const boxPx = (h * viewW) / 100;
-        const emPx = (bigVw * viewW) / 100;
-        g.box.style.top = "auto";
-        g.box.style.left = "auto";
-        g.box.style.right = `${params.tightNameRight}px`;
-        g.box.style.bottom = `${params.tightNameBottom + emPx * 0.5 - boxPx * 0.5}px`;
+      if (isTitle) {
+        // The name: full width, centred on the card, its foot a gap above the
+        // card's top edge, and behind the canvas so the ring passes in front.
+        // Placed by its top rather than the class's centring transform, so
+        // the open can borrow the transform to carry the word to the page.
+        g.box.style.width = "100vw";
+        g.box.style.left = "0";
+        g.box.style.right = "auto";
+        g.box.style.top = `${cardTop - gapPx - titlePx * 0.5 - h * 0.5}px`;
+        g.box.style.bottom = "";
+        // Both: the class centres with Tailwind's `translate` property, which
+        // `transform: none` does not touch.
         g.box.style.transform = "none";
+        g.box.style.translate = "none";
+        g.box.style.zIndex = "-1";
       } else {
-        // Cleared rather than set, so the class on the element takes it back.
-        g.box.style.top = "";
+        // Discipline and year, under the counter: right of the card, or on a
+        // phone under it.
+        g.box.style.width = `${Math.max(160, blockW)}px`;
+        g.box.style.left = `${blockX}px`;
+        g.box.style.right = "auto";
+        g.box.style.top = `${midY + metaPx * 0.75}px`;
         g.box.style.bottom = "";
         g.box.style.transform = "";
-        // Anchored to its own edge, so the fixed-width half of each pair — the
-        // number, the year — is the one against the margin. That is also what
-        // stops a morph shifting anything: rows are sized by their own words
-        // but justified to the same edge, so the words line up across rows.
-        g.box.style.left = isRight ? "auto" : `${params.metaLeft}vw`;
-        g.box.style.right = isRight ? `${params.metaRight}vw` : "auto";
+        g.box.style.translate = "";
+        g.box.style.zIndex = "";
       }
 
       // All three rows, the steady one included. They have to agree exactly or
       // a word would jump as it moved between them.
       for (const layer of [...g.layers, g.plain]) {
         if (!layer) continue;
-        layer.style.justifyContent =
-          corner || isRight ? "flex-end" : "flex-start";
+        layer.style.alignItems = "";
+        layer.style.justifyContent = isTitle ? "center" : "flex-start";
         const row = layer.firstElementChild;
-        row.style.gap = `${isRight ? params.metaGapR : params.metaGapL}vw`;
+        row.style.alignItems = "";
+        row.style.flexDirection = "";
+        row.style.gap = isTitle
+          ? "0"
+          : `${Math.max(metaPx * 0.6, (params.metaGapR * viewW) / 100)}px`;
+        // On the row, not the words: the morph owns the words' opacity.
+        row.style.opacity = isTitle ? `${params.titleDim}` : "";
         const [lead, trail] = row.children;
-        // The number is what goes in the corner layout. Its morph carries on
-        // underneath, so nothing needs resyncing on the way back out.
-        lead.style.display = corner ? "none" : "";
-        lead.style.fontFamily = isRight ? bigFace : smallFace;
-        lead.style.fontSize = isRight ? big : small;
-        lead.style.fontWeight = isRight ? bigWeight : smallWeight;
-        trail.style.fontFamily = isRight ? smallFace : bigFace;
-        trail.style.fontSize = isRight ? small : big;
-        trail.style.fontWeight = isRight ? smallWeight : bigWeight;
+        // The number has a counter of its own, so the name row paints only
+        // the name. Its morph carries on underneath.
+        lead.style.display = isTitle ? "none" : "";
+        lead.style.order = "";
+        lead.style.marginTop = "";
+        lead.style.marginLeft = "";
+        lead.style.lineHeight = "";
+        lead.style.letterSpacing = "";
+        lead.style.color = "";
+        lead.style.fontFamily = bigFace;
+        lead.style.fontSize = `${metaPx}px`;
+        lead.style.fontWeight = `${params.nameWeight}`;
+        trail.style.fontFamily = isTitle ? titleFace : smallFace;
+        trail.style.fontSize = isTitle ? `${titleVw}vw` : `${smallPx}px`;
+        trail.style.fontWeight = isTitle
+          ? `${params.textWeight}`
+          : `${params.idxWeight}`;
+        trail.style.letterSpacing = isTitle ? "-0.03em" : "";
+        trail.style.lineHeight = isTitle ? "1" : "";
+        trail.style.color = "";
       }
     }
 
-    // The column and the counter are set from here too, so all the type moves
-    // as one piece across a breakpoint instead of half of it growing.
-    if (list) list.style.fontSize = `${params.listSize * textK}vw`;
+    // The counter, over the discipline. A second voice, in the colour rather
+    // than the opacity the entry and the open animate.
+    if (count) {
+      count.style.left = `${blockX}px`;
+      count.style.top = `${midY - metaPx * 0.75}px`;
+      count.style.fontFamily = smallFace;
+      count.style.fontSize = `${smallPx}px`;
+      count.style.fontWeight = `${params.idxWeight}`;
+      count.style.color = "var(--ink-2)";
+    }
+
+    // The load counter is set from here too, so all the type moves as one
+    // piece across a breakpoint instead of half of it growing.
     if (loader) {
       loader.style.bottom = `${params.loaderBottom}vh`;
       loader.style.fontFamily = smallFace;
-      loader.style.fontSize = small;
-      loader.style.fontWeight = smallWeight;
+      loader.style.fontSize = `${smallPx}px`;
+      loader.style.fontWeight = `${params.idxWeight}`;
     }
 
     setThreshold();
   };
 
+  // The name leans with the ring. On the rows, not the box: the box is what
+  // the open carries to the page.
+  let leaning = 0;
+  const lean = (deg) => {
+    if (Math.abs(deg - leaning) < 0.02) return;
+    leaning = deg;
+    const g = groups.left;
+    if (!g) return;
+    const t = Math.abs(deg) < 0.02 ? "" : `skewX(${(-deg).toFixed(2)}deg)`;
+    for (const layer of [...g.layers, g.plain]) {
+      const row = layer?.firstElementChild;
+      if (row) row.style.transform = t;
+    }
+  };
+
   // Both groups in one call, so the number can never drift from the name it
   // is numbering.
-  const show = (i) => {
+  const show = (i, dur) => {
     const p = PROJECTS[i];
     if (!p) return;
-    left.set([String(i + 1).padStart(2, "0"), p.name]);
-    right.set([p.type, p.year]);
+    left.set([String(i + 1).padStart(2, "0"), p.name], dur);
+    right.set([p.type, p.year], dur);
+    if (count) {
+      count.textContent = `${String(i + 1).padStart(2, "0")} / ${String(PROJECTS.length).padStart(2, "0")}`;
+    }
     // The groups are hidden from the accessibility tree, so the card is
     // announced once, in full, from the live region instead of four times.
     if (live) live.textContent = `${p.name}. ${p.type}, ${p.year}.`;
+  };
+
+  const settle = () => {
+    left.settle();
+    right.settle();
   };
 
   const dispose = () => {
@@ -262,5 +344,5 @@ export function createMeta(refs, params) {
     gsap.killTweensOf(right.m);
   };
 
-  return { show, style, setThreshold, dispose };
+  return { show, style, setThreshold, settle, lean, dispose };
 }

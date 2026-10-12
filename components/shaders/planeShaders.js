@@ -2,8 +2,20 @@
 // The guaranteed WebGL2 minimum is 224 vec4s, so the link parameters are
 // packed into one vec4 array and the image index is derived arithmetically
 // rather than passed as a tenth array.
-export const MAX_PLANES = 32;
-export const MAX_LINKS = 32;
+// 18 cards, up to six pictures on a project page and the next card under it.
+export const MAX_PLANES = 25;
+// One per pair of neighbours round a closed ring of 18; the bead's thread is
+// its own.
+export const MAX_LINKS = 18;
+// Blocks of the project page's type, drawn in this pass so they bend through
+// the lip with everything else: the title, the strip of facts, the statement,
+// three insights (head and text each) and the way on — 16 in all.
+export const MAX_TEXT = 17;
+// And its hairlines: over the facts, over each insight, over the way on.
+// 25 planes, 18 links, 17 blocks and 5 rules are 185 array rows; with the
+// scalars, the cursor's bead among them, that is about 214 of the 224 vec4s
+// WebGL2 guarantees. Raise one only by lowering another.
+export const MAX_RULES = 5;
 
 export const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -19,6 +31,8 @@ export const fragmentShader = /* glsl */ `
 
   #define MAX_PLANES ${MAX_PLANES}
   #define MAX_LINKS ${MAX_LINKS}
+  #define MAX_TEXT ${MAX_TEXT}
+  #define MAX_RULES ${MAX_RULES}
 
   varying vec2 vUv;
 
@@ -50,7 +64,7 @@ export const fragmentShader = /* glsl */ `
   uniform float uWobble;       // surface tension noise amount, px
   uniform float uTime;
   uniform vec3  uColor;
-  uniform vec3  uPage;         // what is behind the ring, for the tag to read
+  uniform vec2  uTone;         // the art's lift and gain in this room
 
   // All the artwork lives in one atlas: ESSL 1.00 cannot index an array of
   // samplers with a varying index, so a per-plane texture is not an option.
@@ -59,6 +73,44 @@ export const fragmentShader = /* glsl */ `
   uniform float uBlend;        // px over which neighbouring art crossfades
   uniform float uTextured;
 
+  // The opened card wears a full-size copy of its art in place of its atlas
+  // cell, which was never meant to be seen at that size. Always sampled, so
+  // the derivatives the mip selection needs stay defined, and masked in by
+  // cell; zw cover-fit the art to a frame that has left 3:2.
+  uniform sampler2D uHero;
+  uniform vec4  uHeroP;        // cell it stands in for (-1 = none), mix, crop
+
+  // Footage, one clip at a time, over the still it starts from: a card's on
+  // the ring and on its hero, or a clip on the project page. Read in the
+  // space the plane already shows (the hero crop's 3:2, or a page box), and
+  // zw cover-fit the clip into it the way the still was cut from it.
+  uniform sampler2D uLive;
+  uniform vec4  uLiveP;        // cell it plays on (-1 = none), mix, fit
+
+  // The opened project's other pictures, on a sheet of their own: cells at
+  // or past uMoreP.x are read from it instead of the atlas. Each cell holds
+  // its picture already fitted to the box it is shown in, stretched to fill
+  // the cell, so the plane's own 0..1 reads it back undistorted whatever
+  // shape the box is.
+  uniform sampler2D uMore;
+  uniform vec4  uMoreP;        // first cell it covers, cells across, mix, rows
+
+  // The page's type: one sheet of white-on-transparent blocks, each laid on
+  // the page as an ink mask at the box the DOM gave it. Drawn in this pass
+  // rather than left in the DOM so the words pass through the lip the way
+  // the pictures do.
+  uniform sampler2D uText;
+  uniform float uTextCount;
+  uniform vec4  uTextRect[MAX_TEXT];  // centre.xy, half size.zw, world px
+  uniform vec4  uTextUV[MAX_TEXT];    // its place on the sheet: u, v, du, dv
+  uniform float uTextA[MAX_TEXT];     // ink alpha, reveal and tone folded in
+
+  // The page's hairlines, drawn here and not by the DOM: the DOM scrolls on
+  // the compositor and the canvas a frame behind it, so a rule left to the
+  // DOM slid against the type it rules off whenever the page moved. A rule
+  // is 1 css px tall, hung from its top edge; alpha 0 is none.
+  uniform vec4  uRule[MAX_RULES];     // x0, x1, top y (world px), ink alpha
+
   // --- pointer -------------------------------------------------------------
   // Nothing is ever drawn at the cursor. It only changes how the ring behaves
   // around it: the field goes soft, and a wake runs out through the surface.
@@ -66,20 +118,36 @@ export const fragmentShader = /* glsl */ `
   uniform vec4 uMouse;  // cursor.xy px, presence 0..1, blend px added at it
   uniform vec4 uMelt;   // reach px, wake px, wake frequency, wake speed
 
-  // --- the cursor tag ------------------------------------------------------
-  // Drawn in this pass with everything else rather than as an element over the
-  // canvas. That is what lets its label inspect the pixels it is sitting on and
-  // invert against them, and it means the glass refracts the ring the same way
-  // the lip does instead of having to sample it back out of a backdrop.
-  uniform sampler2D uTagTex;  // the label; only its alpha is used, as a mask
-  uniform vec4 uTag;   // centre.xy px, scale.xy — scale 0 is simply absent
-  uniform vec4 uTagP;  // half width, half height, corner radius, refract px
-  uniform vec4 uTagQ;  // frost, rim gain, unused, unused
+  // --- the cursor's bead ---------------------------------------------------
+  // The one exception: on the ring the cursor is a drop of the ink, in the
+  // field with the cards. A capsule round the pointer — a circle while it
+  // is a drop, drawn out sideways into a pill over a card — with a tail
+  // that trails it, and the thread of honey it pulls out of a card it
+  // leaves: the same bridge as the ring's, anchored inside that card. It
+  // melts into the cards on a blend of its own (the softening above would
+  // swallow something this small whole), and in the colour race the drop
+  // and its thread are cell 1000, which wears the ink.
+  uniform vec4 uBead;    // head.xy (the pointer), tail.xy px
+  uniform vec4 uBeadR;   // half height, tail radius, blend px, colour blend px
+  uniform vec4 uBeadT;   // thread: anchor.xy px, radius at the ends, at the pinch
+  // And the word cut out of the pill, so it is read in the picture under
+  // it, darkened a little to hold against the honey on any picture.
+  uniform sampler2D uBeadTex;  // the word: g glyphs
+  uniform vec4 uBeadL;   // word alpha, half width px, thread droop, thread fillet
+  uniform vec4 uBeadLP;  // the word's half width, half height px, darkening, -
+
 
   vec2 atlasUV(vec2 uv, float idx) {
     float col = mod(idx, uGrid.x);
     float row = floor(idx / uGrid.x);
     return (vec2(col, row) + uv) / uGrid;
+  }
+
+  vec2 moreUV(vec2 uv, float idx) {
+    float k = max(idx - uMoreP.x, 0.0);
+    float col = mod(k, uMoreP.y);
+    float row = floor(k / uMoreP.y);
+    return (vec2(col, row) + uv) / vec2(uMoreP.y, max(uMoreP.w, 1.0));
   }
 
 
@@ -189,23 +257,21 @@ export const fragmentShader = /* glsl */ `
     return max(abs(along) - len * 0.5, abs(across) - r);
   }
 
-  // The tag's own outline, scaled by whatever the pop animation is doing.
-  float sdTag(vec2 p) {
-    vec2 hs = uTagP.xy * abs(uTag.zw);
-    return sdRoundBox(p - uTag.xy, hs, min(uTagP.z, min(hs.x, hs.y)));
-  }
-
-  // Its surface normal, by difference. A pill's normal is vertical along the
-  // flat edges and radial round the ends, so nothing simpler than this gets the
-  // refraction pointing the right way the whole way round.
-  vec2 tagNormal(vec2 p) {
-    vec2 e = vec2(1.0, 0.0);
-    vec2 g = vec2(
-      sdTag(p + e.xy) - sdTag(p - e.xy),
-      sdTag(p + e.yx) - sdTag(p - e.yx)
-    );
-    float l = length(g);
-    return l > 0.0001 ? g / l : vec2(0.0);
+  // Two circles and the cone tangent to both: a drop, round at the head and
+  // drawn out to the tail. Exact (Inigo Quilez's uneven capsule); collapses
+  // to the head's circle while the tail is still inside it.
+  float sdDrop(vec2 p, vec2 a, vec2 b, float ra, float rb) {
+    vec2 ba = b - a;
+    float h = dot(ba, ba);
+    float dr = ra - rb;
+    if (h <= dr * dr + 0.01) return length(p - a) - ra;
+    p -= a;
+    vec2 q = vec2(abs(dot(p, vec2(ba.y, -ba.x))), dot(p, ba)) / h;
+    vec2 c = vec2(sqrt(h - dr * dr), dr);
+    float k = c.x * q.y - c.y * q.x;
+    if (k < 0.0) return sqrt(h * dot(q, q)) - ra;
+    if (k > c.x) return sqrt(h * (dot(q, q) + 1.0 - 2.0 * q.y)) - rb;
+    return dot(c, q) - ra;
   }
 
   // smooth minimum — this is what makes the shapes read as liquid.
@@ -216,25 +282,44 @@ export const fragmentShader = /* glsl */ `
     return mix(b, a, h) - k * h * (1.0 - h);
   }
 
-  void main() {
-    // Screen position, kept unbent: the tag is pinned to the cursor, so it is
-    // placed and drawn here rather than in the lip's warped space.
-    vec2 ps = (vUv - 0.5) * uResolution;
-
-    vec2 p = ps;
-    float bend = glassBend(p);
-
-    // The tag refracts whatever is under it, so its warp has to be applied to
-    // the sampling position before the field is read — the same order the lip
-    // works in. Flat through the middle, bending hard at the rim, which is what
-    // reads as a thickness of glass rather than a smear.
-    float dTag = sdTag(ps);
-    float tagOn = min(abs(uTag.z), abs(uTag.w));
-    if (tagOn > 0.001 && dTag < 0.0 && uTagP.w > 0.0) {
-      float depth = clamp(-dTag / max(uTagP.y * abs(uTag.w), 1.0), 0.0, 1.0);
-      float t = 1.0 - depth;
-      p += tagNormal(ps) * (1.0 - sqrt(max(0.0, 1.0 - t * t))) * uTagP.w;
+  // One plane's picture at one point of it. The atlas by default; the full-
+  // size copy for the opened card's cell, cover-fitted to a hero that has
+  // left 3:2; the footage over either while it plays. All are sampled and
+  // masked in, so the derivatives the mip selection needs stay defined.
+  vec3 artAt(vec2 uv, float cell, vec2 fr) {
+    float hero = 1.0 - step(0.5, abs(cell - uHeroP.x));
+    uv = mix(uv, 0.5 + (uv - 0.5) * uHeroP.zw, hero);
+    vec3 c;
+    // Uniform branch. The offset is scaled by bend upstream, so outside the
+    // lip the three taps land on the same texel and there is no fringe.
+    if (uFringe > 0.0) {
+      c = vec3(
+        texture2D(uAtlas, atlasUV(uv + fr, cell)).r,
+        texture2D(uAtlas, atlasUV(uv, cell)).g,
+        texture2D(uAtlas, atlasUV(uv - fr, cell)).b
+      );
+    } else {
+      c = texture2D(uAtlas, atlasUV(uv, cell)).rgb;
     }
+    c = mix(c, texture2D(uHero, uv).rgb, hero * uHeroP.y);
+    float more = step(uMoreP.x - 0.5, cell);
+    c = mix(c, texture2D(uMore, moreUV(uv, cell)).rgb, more * uMoreP.z);
+    // Last, so a clip plays over a page picture as well as over a card.
+    float live = 1.0 - step(0.5, abs(cell - uLiveP.x));
+    vec3 lc = texture2D(uLive, 0.5 + (uv - 0.5) * uLiveP.zw).rgb;
+    c = mix(c, lc, live * uLiveP.y);
+    // The bead wears the ink, whatever the sheets above made of its cell —
+    // put through the room's tone backwards, so it comes out of it as the
+    // ink the page's type wears.
+    vec3 ink = (uColor - uTone.x) / max(uTone.y - uTone.x, 0.001);
+    c = mix(c, ink, step(999.5, cell));
+    return c;
+  }
+
+  void main() {
+    // Screen position in world px, then bent by the lip.
+    vec2 p = (vUv - 0.5) * uResolution;
+    float bend = glassBend(p);
 
     // Read after the bend, so the cursor acts in the same warped space as the
     // ring: dragged into the lip, its influence is refracted with everything
@@ -341,48 +426,88 @@ export const fragmentShader = /* glsl */ `
          * uMelt.y * exp(-toMouse / max(uMelt.x, 1.0));
     }
 
+    // The bead last, so neither the birth's wobble nor the wake ripples a
+    // shape this small. db is the bead with its thread, for the field and
+    // the race; dd the bead alone, which is what sits on top of a card.
+    float db = 1e6;
+    float dd = 1e6;
+    if (uBeadR.x > 0.05) {
+      float rh = uBeadR.x;
+      float pill = sdRoundBox(p - uBead.xy, vec2(max(uBeadL.y, rh), rh), rh);
+      dd = smin(pill, sdDrop(p, uBead.xy, uBead.zw, rh, uBeadR.y), 3.0);
+      db = dd;
+      if (uBeadT.z > -3.0) {
+        float dh = sdBridge(p, uBeadT.xy, uBead.xy, uBeadT.z, uBeadT.w, uBeadL.z);
+        db = smin(db, dh, uBeadL.w);
+      }
+      d = smin(d, db, uBeadR.z);
+      // Outside itself its distance counts double in the race, so it keeps
+      // its colour to its own shape and neck instead of dyeing whatever goo
+      // it passes near — the web between two cards, say.
+      float dr = db + max(db, 0.0);
+      if (dr < d0) {
+        d1 = d0; uv1 = uv0; im1 = im0; dm1 = dm0;
+        d0 = dr; uv0 = vec2(0.5); im0 = 1000.0; dm0 = 1.0;
+      } else if (dr < d1) {
+        d1 = dr; uv1 = vec2(0.5); im1 = 1000.0; dm1 = 1.0;
+      }
+    }
+
     // Clamped, not just floored: the distance cull above leaves a step in the
     // field, and an unclamped fwidth across that step paints a half-opaque
     // outline along every cull boundary.
     float aa = clamp(fwidth(d), 0.5, 2.0);
     float alpha = 1.0 - smoothstep(-aa, aa, d);
 
-    // The tag has to survive this: it can overhang the edge of a card, and
-    // those pixels are its own even though the ring has nothing there.
-    float taa = clamp(fwidth(dTag), 0.5, 2.0);
-    float ta = tagOn > 0.001 ? 1.0 - smoothstep(-taa, taa, dTag) : 0.0;
+    // The page's type, in the same warped space as the field. The sheet has
+    // no mipmaps, so sampling inside a loop with early-outs is safe.
+    float tA = 0.0;
+    for (int t = 0; t < MAX_TEXT; t++) {
+      if (float(t) >= uTextCount) break;
+      float a = uTextA[t];
+      if (a <= 0.001) continue;
+      vec4 r = uTextRect[t];
+      vec2 q = p - r.xy;
+      if (abs(q.x) > r.z || abs(q.y) > r.w) continue;
+      vec2 tuv = q / (2.0 * r.zw) + 0.5;
+      tuv.y = 1.0 - tuv.y;
+      vec4 s = uTextUV[t];
+      tA = max(tA, texture2D(uText, s.xy + tuv * s.zw).a * a);
+    }
 
-    if (alpha <= 0.001 && ta <= 0.001) discard;
+    // The rules, as ink like the type.
+    float hw = 0.5 * max(fwidth(p.y), 0.0001);
+    for (int i = 0; i < MAX_RULES; i++) {
+      vec4 r = uRule[i];
+      if (r.w <= 0.001 || p.x < r.x || p.x > r.y) continue;
+      float cov = 1.0 - smoothstep(0.5 - hw, 0.5 + hw, abs(p.y - (r.z - 0.5)));
+      tA = max(tA, cov * r.w);
+    }
+
+    // The word cut out of the pill, in the pill's own (bent) space.
+    float bA = 0.0;
+    if (uBeadL.x > 0.001) {
+      vec2 bq = p - uBead.xy;
+      if (abs(bq.x) < uBeadLP.x && abs(bq.y) < uBeadLP.y) {
+        bA = texture2D(uBeadTex, bq / (2.0 * uBeadLP.xy) + 0.5).g * uBeadL.x;
+      }
+    }
+
+    if (alpha <= 0.001 && tA <= 0.001) discard;
 
     // Even mix where the two nearest planes are equidistant, resolving to
     // whichever is clearly nearer beyond uBlend. Both the art and the dim are
     // carried across on it, so neither can put a seam down the goo.
-    float nearest = smoothstep(-uBlend, uBlend, d1 - d0);
+    // Against the bead the crossfade is its own, narrower, so the drop keeps
+    // its colour up to the neck instead of staining the card it touches.
+    float bl = max(im0, im1) > 999.5 ? uBeadR.w : uBlend;
+    float nearest = smoothstep(-bl, bl, d1 - d0);
 
     vec3 col = uColor;
     if (uTextured > 0.5) {
-      vec3 c0, c1;
-
-      // Uniform branch, so the derivatives the mip selection needs stay
-      // defined. The offset is scaled by bend, so outside the lip the three
-      // taps land on the same texel and there is no fringe.
-      if (uFringe > 0.0) {
-        vec2 fr = vec2(uFringe * bend / max(uSize.x, 1.0), 0.0);
-        c0 = vec3(
-          texture2D(uAtlas, atlasUV(uv0 + fr, im0)).r,
-          texture2D(uAtlas, atlasUV(uv0, im0)).g,
-          texture2D(uAtlas, atlasUV(uv0 - fr, im0)).b
-        );
-        c1 = vec3(
-          texture2D(uAtlas, atlasUV(uv1 + fr, im1)).r,
-          texture2D(uAtlas, atlasUV(uv1, im1)).g,
-          texture2D(uAtlas, atlasUV(uv1 - fr, im1)).b
-        );
-      } else {
-        c0 = texture2D(uAtlas, atlasUV(uv0, im0)).rgb;
-        c1 = texture2D(uAtlas, atlasUV(uv1, im1)).rgb;
-      }
-
+      vec2 fr = vec2(uFringe * bend / max(uSize.x, 1.0), 0.0);
+      vec3 c0 = artAt(uv0, im0, fr);
+      vec3 c1 = artAt(uv1, im1, fr);
       col = mix(c1, c0, nearest);
     }
 
@@ -390,39 +515,32 @@ export const fragmentShader = /* glsl */ `
     // hovered card reads as the lit one. Untextured, uColor is already almost
     // black and there is nothing here to see — which is fine, that mode exists
     // to read the goo's silhouette.
+    // The room's tone on the art: blacks lifted toward the paper, then
+    // gained. Identity in the dark room.
+    if (uTextured > 0.5) col = col * uTone.y + uTone.x * (1.0 - col);
+
     col *= mix(dm1, dm0, nearest);
+
+    // A card is deeper than the bead over most of it, so the race alone would
+    // hide it there; it sits on top of whatever it is dragged across — but
+    // for the word, where the picture shows through, a little darker.
+    if (dd < aa) {
+      float bc = 1.0 - smoothstep(-aa, aa, dd);
+      col = mix(col, uColor, bc * (1.0 - bA));
+      col = mix(col, col * uBeadLP.z, bc * bA);
+    }
 
     // A touch of lift where the lip is steepest, so the band reads as a
     // surface catching light rather than only a warp.
     col += bend * uSheen;
 
-    // --- the tag -------------------------------------------------------------
-    if (ta > 0.001) {
-        // Where the ring does not reach, the page is what shows through the
-        // glass, so the label has something real to read there too.
-        vec3 under = mix(uPage, col, alpha);
-        vec3 glass = mix(under, vec3(1.0), uTagQ.x);
-
-        // Rim: lit where it faces the light, dark where it turns away. Signing
-        // it is what gives an edge that reads as thickness rather than as an
-        // outline drawn on.
-        float band = clamp(1.0 + dTag / max(uTagP.z, 1.0), 0.0, 1.0);
-        glass += band * band * uTagQ.y *
-                 dot(tagNormal(ps), vec2(-0.7071, 0.7071));
-
-        // The label. Pure black or pure white, decided per pixel from what that
-        // pixel is sitting on, so a glyph crossing a light edge onto a dark one
-        // changes colour halfway across. A blend cannot do this — inverting a
-        // mid grey returns a mid grey — and picking one colour for the whole
-        // label cannot either.
-        vec2 tuv = (ps - uTag.xy) / (uTagP.xy * 2.0 * abs(uTag.zw)) + 0.5;
-        float m = texture2D(uTagTex, clamp(tuv, 0.0, 1.0)).a;
-        float l = dot(glass, vec3(0.2126, 0.7152, 0.0722));
-        // Narrow, not hard: a step here would alias along the boundary.
-        glass = mix(glass, vec3(1.0 - smoothstep(0.46, 0.54, l)), m);
-
-      col = mix(col, glass, ta);
-      alpha = max(alpha, ta);
+    // Ink over whatever is under it: the plane where there is one, nothing
+    // where there is not — col is the nearest plane's edge colour there, and
+    // mixing toward it would tint the antialiased edge of every letter.
+    if (tA > 0.001) {
+      vec3 base = mix(uColor, col, clamp(alpha, 0.0, 1.0));
+      col = mix(base, uColor, tA);
+      alpha = max(alpha, tA);
     }
 
     // Written straight through. The atlas is tagged NoColorSpace so sampling

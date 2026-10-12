@@ -40,19 +40,23 @@ The contents of `public/` are NOT covered by it:
     Licence 1.1. Copyright 2024 The Geist Project Authors.
     https://github.com/vercel/geist-font
 
-  - Project imagery (`public/*.webp`) is not mine. It was collected
-    from Behance, more or less at random, purely so there was real work to
-    build and judge the layout against. I claim no ownership of any of it, no
-    licence over it is granted by the terms above, and its use here is not an
-    endorsement of reusing it. Anyone forking this should replace it with
-    their own work.
+  - Project imagery (`public/*.webp`, `public/*.mp4`, and the smaller
+    copies of the pictures in `public/sm/`) is placeholder stock,
+    not mine. The photographs are published on Unsplash under the Unsplash
+    License (https://unsplash.com/license): free to use for commercial and
+    non-commercial purposes without permission or attribution, but not to be
+    compiled into a competing stock service. The clips are from Mixkit under
+    the Mixkit Stock Video Free License
+    (https://mixkit.co/license/#videoFree): free to use, copy and modify in
+    commercial and non-commercial projects, without attribution, subject to
+    Mixkit's terms (https://mixkit.co/terms/), which among other things do not
+    allow redistributing the items on their own or on a stock basis. Each
+    image and clip is credited in README.md. No rights to them are granted by
+    the terms above beyond what those licenses already grant. Anyone forking
+    this should replace them with their own work.
 
-    If you made one of these pieces and would like to be credited, or would
-    like it taken down, please open an issue on the repository and I will
-    sort it out.
-
-    The project names, disciplines and years shown alongside the images are
-    invented placeholders and are not claims about who made what.
+    The project names, disciplines, years and captions shown alongside the
+    images are invented placeholders and are not claims about who made what.
 
 Third-party code included in this repository:
 

@@ -1,5 +1,5 @@
 import { MAX_PLANES } from "../shaders/planeShaders";
-import { EASES, WEIGHTS } from "./params";
+import { EASES, THEMES, WEIGHTS } from "./params";
 import { TAU } from "./utils";
 
 /**
@@ -65,15 +65,23 @@ export function mountGui(GUI, { params, state, info, actions }) {
   fit.add(params, "narrowPosX", -4, 4, 0.005).name("narrow move x");
   fit.add(params, "narrowEndScale", 0.05, 8, 0.01).name("narrow end scale");
   onFit("tightAt", 240, 1200, 10, "tight at (px)");
-  onFit("tightRadius", 0.3, 2, 0.01, "tight radius x");
-  fit.add(params, "tightPosX", -6, 6, 0.005).name("tight move x");
+  // The phone's resting ring is worked out in refit and the block hangs off
+  // it, so these redo both.
+  const onTight = (k, lo, hi, step, label) =>
+    fit
+      .add(params, k, lo, hi, step)
+      .name(label)
+      .onChange(() => {
+        refit();
+        styleMeta();
+      });
+  onTight("tightRadius", 0.3, 2, 0.01, "tight forming radius x");
+  onTight("tightCard", 0.3, 1, 0.01, "tight card (of width)");
+  onTight("tightSpacing", 0.2, 1, 0.01, "tight spacing (of height)");
   onFit("tightSplit", 0.2, 2, 0.01, "tight heading x");
   const onMetaFit = (k, lo, hi, step, label) =>
     fit.add(params, k, lo, hi, step).name(label).onChange(styleMeta);
-  onMetaFit("tightName", 0.3, 3, 0.01, "tight name x");
-  onMetaFit("tightNameBottom", 0, 200, 1, "tight name bottom");
-  onMetaFit("tightNameRight", 0, 200, 1, "tight name right");
-  onMetaFit("tightMetaWidth", 10, 100, 1, "tight box (vw)");
+  onMetaFit("tightTitle", 0.3, 3, 0.01, "tight title x");
 
   // -- shape ---------------------------------------------------------------
   const shape = gui.addFolder("shape");
@@ -151,14 +159,25 @@ export function mountGui(GUI, { params, state, info, actions }) {
   const meta = gui.addFolder("meta");
   const onMeta = (k, lo, hi, step, label) =>
     meta.add(params, k, lo, hi, step).name(label).onChange(styleMeta);
-  onMeta("metaLeft", 0, 30, 0.1, "left (vw)");
-  onMeta("metaRight", 0, 30, 0.1, "right (vw)");
-  onMeta("metaGapL", 0, 20, 0.1, "gap left (vw)");
-  onMeta("metaGapR", 0, 20, 0.1, "gap right (vw)");
-  onMeta("metaWidth", 5, 60, 0.5, "box (vw)");
-  onMeta("nameSize", 0.5, 10, 0.01, "name size (vw)");
+  onMeta("metaLeft", 0, 30, 0.1, "left margin (vw)");
+  onMeta("metaRight", 0, 30, 0.1, "right margin (vw)");
+  onMeta("blockGap", 0, 20, 0.1, "block gap (vw)");
+  onMeta("titleSize", 2, 24, 0.1, "name (vw)");
+  onMeta("narrowTitle", 0.3, 3, 0.01, "narrow name x");
+  onMeta("titleGap", -10, 10, 0.1, "name gap (vh)");
+  onMeta("titleBlur", 0, 0.5, 0.005, "name smear (em)");
+  onMeta("titleDim", 0.05, 1, 0.01, "name opacity");
+  meta.add(params, "titleLean", 0, 3, 0.05).name("lean (deg per rad/s)");
+  meta.add(params, "titleLeanMax", 0, 30, 0.5).name("lean max (deg)");
+  onMeta("metaSize", 0.4, 6, 0.01, "discipline (vw)");
+  onMeta("metaMin", 6, 24, 0.5, "discipline floor (px)");
+  onMeta("smallMin", 6, 24, 0.5, "small floor (px)");
+  onMeta("metaGapR", 0, 10, 0.1, "discipline gap (vw)");
+  meta.add(params, "listReach", 0.2, 9, 0.1).name("index reach (slots)");
+  onMeta("nameSize", 0.5, 10, 0.01, "page footer (vw)");
   onMeta("idxSize", 0.4, 8, 0.01, "number size (vw)");
   onMeta("listSize", 0.3, 4, 0.01, "column size (vw)");
+  onMeta("listDim", 0.05, 1, 0.01, "column dim");
   meta.add(params, "nameWeight", WEIGHTS).name("name weight").onChange(styleMeta); // prettier-ignore
   meta.add(params, "idxWeight", WEIGHTS).name("number weight").onChange(styleMeta); // prettier-ignore
   meta.add(params, "nameMorphTime", 0.1, 4, 0.05).name("morph time");
@@ -170,6 +189,27 @@ export function mountGui(GUI, { params, state, info, actions }) {
   // Re-announces whatever is already at the front, so the morph can be watched
   // without spinning to a new card each time.
   meta.add({ again: actions.replayMeta }, "again").name("play again");
+
+  // -- the room -------------------------------------------------------------
+  const room = gui.addFolder("room");
+  room
+    .add(params, "theme", Object.keys(THEMES))
+    .name("room")
+    .onChange(() => {
+      Object.assign(params, THEMES[params.theme]);
+      actions.retheme();
+      gui.controllersRecursive().forEach((c) => c.updateDisplay());
+    });
+  room.addColor(params, "paper").onChange(actions.retheme);
+  room.addColor(params, "ink").onChange(actions.retheme);
+  room.add(params, "toneLift", -0.1, 0.2, 0.005).name("art lift").onChange(actions.retheme); // prettier-ignore
+  room.add(params, "toneGain", 0.7, 1.4, 0.01).name("art gain").onChange(actions.retheme); // prettier-ignore
+  room.add(params, "glowLight", 0, 100, 1).name("glow lightness").onChange(actions.retheme); // prettier-ignore
+  room.add(params, "grainBlend", ["soft-light", "multiply", "overlay"]).name("grain blend").onChange(styleMeta); // prettier-ignore
+  room.add(params, "vignette", 0, 1, 0.01).name("vignette").onChange(styleMeta);
+  room.add(params, "glow", 0, 1, 0.01).name("glow").onChange(styleMeta);
+  room.add(params, "glowSpread", 10, 120, 1).name("glow spread (vw)").onChange(styleMeta); // prettier-ignore
+  room.add(params, "grain", 0, 0.5, 0.01).name("grain").onChange(styleMeta);
 
   // -- glass ---------------------------------------------------------------
   const glass = gui.addFolder("glass");
@@ -221,17 +261,65 @@ export function mountGui(GUI, { params, state, info, actions }) {
   sides.add(params, "sideDim", 0, 1, 0.01).name("dim");
   sides.add(params, "sideReach", 0.2, 12, 0.05).name("reach (how many)");
 
-  const tag = gui.addFolder("tag");
-  tag.add(params, "tagFrom", 0, 2000, 10).name("hide at or below (px)");
-  tag.add(params, "tagText").name("label").onFinishChange(rebuildTag);
-  tag.add(params, "tagSize", 6, 40, 1).name("size").onChange(rebuildTag);
-  tag.add(params, "tagArrow", 0, 40, 1).name("arrow").onChange(rebuildTag);
-  tag.add(params, "tagGap", 0, 30, 1).name("gap").onChange(rebuildTag);
-  tag.add(params, "tagX", -400, 400, 1).name("offset x");
-  tag.add(params, "tagY", -400, 400, 1).name("offset y (+up)");
-  tag.add(params, "tagFrost", 0, 1, 0.01).name("frost");
-  tag.add(params, "tagRim", 0, 1, 0.01).name("rim");
-  tag.add(params, "tagRefract", 0, 60, 0.5).name("refract");
+  const cursor = gui.addFolder("cursor");
+  cursor.add(params, "tagText").name("word").onFinishChange(rebuildTag);
+  cursor
+    .add(params, "wordSize", 8, 24, 0.5)
+    .name("word size")
+    .onFinishChange(rebuildTag);
+  // Read every frame, so none of these needs a callback.
+  cursor.add(params, "beadSize", 4, 40, 0.5).name("bead (px)");
+  cursor.add(params, "beadPillH", 4, 40, 0.5).name("pill half height (px)");
+  cursor.add(params, "beadPillPad", 0, 60, 0.5).name("pill padding (px)");
+  cursor.add(params, "beadKnock", 0, 1, 0.01).name("word brightness");
+  cursor.add(params, "beadTail", 0.1, 1, 0.01).name("tail");
+  cursor.add(params, "beadLag", 0.02, 1, 0.01).name("tail chase");
+  cursor.add(params, "beadStretch", 0, 8, 0.1).name("stretch");
+  cursor.add(params, "beadMelt", 0, 80, 0.5).name("melt (px)");
+  cursor.add(params, "beadReach", 0, 300, 1).name("reaches from (px)");
+  cursor.add(params, "beadInk", 0.5, 30, 0.5).name("ink blend (px)");
+  cursor.add(params, "beadSnap", 20, 600, 5).name("thread snaps at (px)");
+  cursor.add(params, "beadHold", 0.1, 4, 0.05).name("thread lasts (s)");
+
+  // -- opening a project ----------------------------------------------------
+  const open = gui.addFolder("open");
+  open.add(params, "openTime", 0.2, 4, 0.05).name("open (s)");
+  open.add(params, "closeTime", 0.2, 4, 0.05).name("close (s)");
+  open.add(params, "openEase", EASES).name("swell ease");
+  open.add(params, "openPush", 0, 900, 5).name("ring backs off (px)");
+  open.add(params, "openShrink", 0, 1, 0.01).name("and shrinks by");
+  open.add(params, "openWeb", 0, 2, 0.01).name("thread");
+  open.add(params, "tightOpenWeb", 0, 2, 0.01).name("thread on a phone");
+  open.add(params, "openMelt", 0, 200, 1).name("melt");
+  open.add(params, "openWobble", 0, 20, 0.1).name("ripple");
+  // The frame is sized on resize like the fit, and the header off the frame.
+  const onOpen = (k, lo, hi, step, label) =>
+    open
+      .add(params, k, lo, hi, step)
+      .name(label)
+      .onChange(() => {
+        refit();
+        styleMeta();
+      });
+  onOpen("openTop", 0, 20, 0.1, "close top (vh)");
+  onOpen("openIdxGap", 0, 5, 0.1, "label gap (vh)");
+  onOpen("openGap", 0, 10, 0.1, "name gap (vh)");
+  onOpen("openHeroAspect", 1.5, 2.6, 0.01, "hero aspect");
+  onOpen("tightHeroAspect", 1.5, 2.6, 0.01, "hero aspect on a phone");
+  onOpen("openStrip", 0, 20, 0.5, "strip gap (vh)");
+  onOpen("openImages", 0, 40, 0.5, "pictures gap (vh)");
+  onOpen("openLead", 1, 4, 0.05, "statement (vw)");
+  open.add(params, "revealAt", 0.5, 1.2, 0.01).name("reveal line");
+  open.add(params, "closeText").name("close label").onFinishChange(styleMeta);
+  open.add({ open: actions.openFront }, "open").name("open front card");
+  open.add({ close: actions.closeProject }, "close");
+
+  // -- footage ---------------------------------------------------------------
+  // Read every frame, so nothing needs a callback.
+  const live = gui.addFolder("footage");
+  live.add(params, "live").name("play footage");
+  live.add(params, "liveDelay", 0, 3, 0.05).name("rest before (s)");
+  live.add(params, "liveFade", 0.05, 2, 0.05).name("fade (s)");
 
   // -- material ------------------------------------------------------------
   const honey = gui.addFolder("honey");

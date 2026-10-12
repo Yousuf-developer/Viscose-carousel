@@ -31,7 +31,7 @@ export function createSplitText(group, params) {
     // Above display resolution — type is the first thing to show softness and
     // these canvases are tiny.
     const dpr = Math.min(window.devicePixelRatio, 2) * 2;
-    const font = `${params.textWeight} ${size}px "${params.textFont}", ui-sans-serif, system-ui, sans-serif`;
+    const font = `${params.textWeight} ${size}px "${params.textFont}", "${params.textFallback}", ui-sans-serif, system-ui, sans-serif`;
 
     const measure = document.createElement("canvas").getContext("2d");
     measure.font = font;
@@ -75,7 +75,14 @@ export function createSplitText(group, params) {
           uniforms: {
             uTex: { value: tex },
             uReveal: { value: 0 },
-            uColor: { value: new THREE.Color(params.textColor) },
+            // As authored: the shader writes it straight through, and a
+            // linearised ink drew the heading darker than the CSS's.
+            uColor: {
+              value: new THREE.Color().setStyle(
+                params.ink,
+                THREE.LinearSRGBColorSpace,
+              ),
+            },
             uOpacity: { value: 1 },
           },
           transparent: true,

@@ -16,6 +16,33 @@ export const EASES = [
 
 export const WEIGHTS = { Light: 300, Regular: 400, Medium: 500, Semibold: 600 };
 
+// The two rooms. Applied over the defaults by `theme`; each value is still a
+// param of its own afterwards, so a room can be tuned from either start.
+export const THEMES = {
+  dark: {
+    paper: "#0e0e0d",
+    ink: "#efece6",
+    toneLift: 0,
+    toneGain: 1,
+    glow: 0.14,
+    glowLight: 50,
+    grain: 0.1,
+    grainBlend: "soft-light",
+    vignette: 0.6,
+  },
+  light: {
+    paper: "#f2efe9",
+    ink: "#16140f",
+    toneLift: 0.035,
+    toneGain: 1.07,
+    glow: 0.16,
+    glowLight: 30,
+    grain: 0.08,
+    grainBlend: "multiply",
+    vignette: 0,
+  },
+};
+
 /**
  * Every tunable in one place. A fresh object per mount so the dev panel cannot
  * leak edits from one mount into the next.
@@ -47,13 +74,14 @@ export function defaultParams() {
     narrowEndScale: 4.22,
 
     tightAt: 640, // inclusive
-    tightRadius: 0.82, // multiplies narrowRadius
-    tightPosX: -3.5,
+    // A phone is composed in fractions of its own window, not scaled from the
+    // reference one: the ring forms at its usual size, then settles with the
+    // front card a share of the width on the centre line and the ring big
+    // enough that its neighbours sit half in the lip.
+    tightRadius: 0.82, // multiplies narrowRadius, for the ring as it forms
+    tightCard: 0.8, // the front card's width at rest, of the window's
+    tightSpacing: 0.54, // its neighbours' distance from it, of the window's height
     tightSplit: 0.8, // the heading, competing with the ring for centre screen
-    tightName: 1.5, // the name is the only label left, so it takes the billing
-    tightNameBottom: 16, // px
-    tightNameRight: 16, // px
-    tightMetaWidth: 70, // vw of box, and so of filter region, around it
 
     // -- geometry, all at the reference window ---------------------------
     planeSize: 90, // long edge in px; aspect locked at 1.5 : 1
@@ -104,13 +132,30 @@ export function defaultParams() {
     pickTime: 0.55, // click-to-centre: seconds for one slot, root-scaled
     pickEase: "power3.inOut",
 
+    // -- the room ---------------------------------------------------------
+    // Two rooms, one switch. Dark: bone ink on near-black, the front card's
+    // colour glowing behind it, grain in soft light, a vignette — the tonal
+    // art sits in it like film. Light: ink on warm paper, the glow turned
+    // into a soft shadow under the card, the art lifted a touch so it reads
+    // as prints, grain multiplied in, no vignette. `theme` applies a preset;
+    // everything under it is still a param of its own.
+    theme: "dark",
+    paper: "#0e0e0d",
+    ink: "#efece6",
+    // The art's tone in this room: blacks lifted by, then gained by. Both
+    // 0/1 leave the pictures as graded.
+    toneLift: 0,
+    toneGain: 1,
+
     // -- the intro heading, in the scene ---------------------------------
     text: "Works '26",
     textSize: 41,
     textFont: "PP Neue Montreal",
+    // Stands in wherever the heading face is absent — PP Neue Montreal is a
+    // commercial face and a fresh clone may not have it. Free, and bundled.
+    textFallback: "Satoshi",
     textWeight: 400,
     textTracking: 0, // em
-    textColor: "#0a0a0a",
     textAt: 0.42, // fraction of the spread
     textTime: 0.95,
     textStagger: 0.015,
@@ -120,21 +165,47 @@ export function defaultParams() {
     textOutTime: 0.7,
     textOutEase: "power2.in",
 
-    // -- the meta either side of the ring --------------------------------
-    // [number . name] left, [type . year] right. Insets and gaps in vw so the
-    // pairs hold their relationship as the window changes.
-    metaLeft: 5.5,
-    metaRight: 5.5,
-    metaGapL: 4.7,
-    metaGapR: 3.6,
-    metaWidth: 34, // this box is the filter region
-    nameSize: (24 / 1440) * 100, // vw, quoted at 1440
+    // -- the type around the ring ---------------------------------------
+    // A site frame — name, a line and a nav along the top, a hint and a note
+    // along the bottom — and the project block right of the front card: a
+    // counter, the title in the heading's face, then discipline and year.
+    // The ring has the left of the screen; the type keeps to the right.
+    // Insets in vw so everything holds its relationship as the window changes.
+    metaLeft: 5.5, // vw, the page's left margin
+    metaRight: 5.5, // and its right
+    // The project's name, set large over the card and behind the ring, so
+    // the cards pass in front of it as the ring turns. The one big gesture.
+    titleSize: 13, // vw
+    narrowTitle: 1, // x below narrowAt
+    tightTitle: 1.4, // x below tightAt: as large as the longest name allows
+    titleGap: 2, // vh between the name's foot and the card's top edge
+    titleBlur: 0.15, // em the name smears to in its morph; the small rows use nameBlur
+    titleDim: 1, // 1 is ink; lower sets the name back into the room
+    // The name leans with the ring's speed, the way the honey does.
+    titleLean: 0.6, // degrees of skew per rad/s
+    titleLeanMax: 7, // and no further
+    metaSize: 1.15, // vw, the discipline beside the year
+    metaMin: 14, // px, its floor, which a phone reaches
+    smallMin: 13, // px, the floor under the year, the counters and the index
+    metaGapR: 1.2, // vw between them
+    blockGap: 5, // vw from the card's right edge to the block
+    listReach: 2.2, // slots over which the index brightens toward the front
+    // The room is lit by the work: the front card's own colour, lifted to a
+    // light, pooled behind it. Grain and a vignette over everything.
+    glow: 0.14, // strength, 0 is off
+    glowSpread: 64, // vw, the falloff's horizontal radius; it is Gaussian, so most of it is quiet
+    glowLight: 50, // the glow's lightness, %: above the paper it lights, below it shades
+    grain: 0.1, // opacity, 0 is off
+    grainBlend: "soft-light", // or "multiply", which reads on light paper
+    vignette: 0.6, // strength, 0 is off; under the work, so it never darkens a card or a word
+    nameSize: (24 / 1440) * 100, // vw, quoted at 1440; the project page's footer
     nameFont: "Satoshi",
     nameWeight: 500,
     idxSize: (16 / 1440) * 100, // a step lighter and smaller than the name
     idxFont: "Geist",
     idxWeight: 400,
-    listSize: 0.9, // vw; the column's line height is unitless so rows follow
+    listSize: 1.0, // vw; the column's line height is unitless so rows follow
+    listDim: 0.28, // opacity of the names not at the front
 
     // The morph between one card's words and the next.
     nameMorphTime: 1.2,
@@ -156,8 +227,9 @@ export function defaultParams() {
     sheen: 0.05,
 
     // -- pointer ---------------------------------------------------------
-    // Nothing is drawn at the cursor. It softens the field around itself,
-    // leans the nearest planes toward it and strings honey back between them.
+    // Apart from the bead below, nothing is drawn at the cursor. It softens
+    // the field around itself, leans the nearest planes toward it and strings
+    // honey back between them.
     hover: true,
     touchHold: 0.16, // seconds of near-still press before a finger counts
     touchSlop: 10, // px of travel inside that window that calls it a swipe
@@ -182,20 +254,64 @@ export function defaultParams() {
     sideDim: 0.15,
     sideReach: 2.4, // in plane long edges, measured from the hovered card
 
-    // -- the cursor tag, drawn in the same shader pass --------------------
-    tagFrom: 1024, // viewport width it needs; below that there is no cursor
+    // -- the bead at the cursor ----------------------------------------------
+    // With a mouse, the cursor on the ring is a drop of the ink drawn in the
+    // field: it reaches for a card it nears and melts into its edge, opens
+    // over it into a pill with the word for a click (tagText) cut out of it,
+    // and pulls a thread of honey out of the card when it leaves. An open
+    // page keeps the native cursor; the word is set by ring/bead.js.
+    beadSize: 14, // px across at rest
+    beadPillH: 15, // px, half the pill's height over a card
+    beadPillPad: 15, // px of honey either side of the word
+    beadKnock: 0.55, // how bright the picture shows through the word
+    beadTail: 0.38, // the tail's radius, as a fraction of the head's
+    beadLag: 0.3, // how fast the tail catches up, per 60fps frame
+    beadStretch: 2.6, // longest the drop gets, in head radii
+    beadMelt: 20, // px of blend between it and a card
+    beadReach: 64, // px from a card's edge at which the drop starts reaching for it
+    beadInk: 2.5, // px over which its ink meets a card's colour
+    beadSnap: 240, // px a thread stretches before it lets go
+    beadHold: 1.3, // s a thread lasts if it is not pulled
     tagText: "View",
-    tagSize: 14,
-    tagWeight: 500,
-    tagArrow: 14, // px, the svg in /public
-    tagGap: 6,
-    // Offset off the cursor deliberately: sitting under it, the tag covers
-    // the thing being pointed at. World px, so +y is up like posY.
-    tagX: 64,
-    tagY: -38,
-    tagFrost: 0.16,
-    tagRim: 0.02,
-    tagRefract: 39.5,
+    wordSize: 13, // px
+
+    // -- opening a project -------------------------------------------------
+    // The front card swells into the hero of a page while the rest of the
+    // ring backs away from it and the threads between them stretch and let
+    // go; the name keeps the size it had over the ring and moves to the top.
+    // Closing is the same move backwards. The page under the hero is DOM: a
+    // strip of facts and the statement, the project's pictures and clips,
+    // and the next project. Each piece reveals itself as it is scrolled to;
+    // the pictures stay on their boxes, so nothing runs into its caption.
+    openTime: 1.25,
+    closeTime: 0.95,
+    openEase: "expo.inOut", // the swell: slow to start, quick to finish
+    openPush: 320, // px the rest of the ring backs off, at the reference window; never short of leaving it
+    openShrink: 0.6, // and how much of their size they give up doing it
+    openWeb: 0.3, // thread width strung to the swelling card, fraction of the facing edge
+    tightOpenWeb: 0.1, // and on a phone, where the card is most of the width
+    openMelt: 50, // px added to the goo while those threads are in play
+    openWobble: 2.5, // px of surface ripple over the same window
+    openTop: 2.4, // vh, the Close label's top edge; the name sits under the lip, never above this
+    openIdxGap: 0.6, // vh between a micro label and the name under it
+    openGap: 2.4, // vh between the name and the hero
+    openHeroAspect: 1.85, // the hero's width over its height; the card's 1.5 is the floor
+    tightHeroAspect: 1.5, // and on a phone, which is tall
+    openStrip: 6, // vh between the hero and the strip of facts
+    openImages: 14, // vh between the statement and the pictures
+    openLead: 2.0, // vw, the statement
+    revealAt: 0.88, // of the window's height: a piece reveals once its top is above this line
+    closeText: "Close", // the Close button's name, for screen readers
+
+    // -- footage -------------------------------------------------------------
+    // Each card's own clip plays on it once the ring has come to rest with it
+    // in front, and carries on through the open. It starts on the frame the
+    // card already shows, so it fades in over a picture that does not move.
+    // Off under prefers-reduced-motion and Save-Data, and simply absent
+    // wherever autoplay is refused.
+    live: true,
+    liveDelay: 0.6, // s the ring has to rest before the front card plays
+    liveFade: 0.5, // s for the footage to come up over the still; it goes in about half that
 
     // -- honey between neighbouring planes --------------------------------
     thread: 1.0,

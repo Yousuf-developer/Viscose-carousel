@@ -30,9 +30,9 @@ So nothing fades in. One card is born in the middle of the screen and every
 other card is already inside it. They peel off one at a time, alternating left
 and right, each one dragging a thread behind it until the ring closes.
 
-![The ring mid-entry: cards on the right have separated cleanly while those on
-the left are still fused into one another with thick necks between
-them](docs/entry.png)
+![The ring mid-entry: the cards have begun to peel off the seed and still
+cling to one another, fused by thick necks of the same material, the red
+Ferrari at the middle of the arc](docs/entry.webp)
 
 This frame is basically the whole pitch. The right side has finished
 separating. The left side is still mid-pull. One pair is joined by a thick
@@ -88,13 +88,13 @@ flickering off. Driving the radius negative carries it out of antialiasing
 range so it fades out of the field properly. The thread doesn't vanish. It
 breaks.
 
-## The cursor is a force, not a pointer
+## The cursor is a force, and a drop
 
-Nothing is ever drawn at the cursor. It's a disturbance in the field.
+Mostly the cursor is a disturbance in the field.
 
-![Hovering a card: the neighbours above and below have backed away and dimmed,
-threads stretch between them, and the View tag has appeared on the
-cursor](docs/hover.png)
+![Pulling out of a card: the cursor's drop has just left the front card's
+edge and strings a thread of honey after it, while the ring's own threads run
+thin to the neighbours above and below](docs/hover.webp)
 
 Move over a card and it raises `k` locally, so the surface goes soft right
 there and stays stiff further out. The nearest cards lean toward it and swell
@@ -107,11 +107,21 @@ The rates are lopsided on purpose. Cards take up a lean quickly and let go of
 it slowly. Equal rates read as a mechanism following your cursor. The gap
 between them reads as something thick being dragged through.
 
+The pointer itself is a drop of the ink, evaluated in the same pass. It isn't
+one of the planes: the softening around the cursor would swallow something
+that small whole, so it joins the field last, on a blend of its own. It drags
+a tail when it moves, leans over to a card it comes near and melts into the
+edge before you're over it. Over a picture it opens into a pill with VIEW
+cut out of it, so you read the word in the photo. Pull out and it closes up
+and strings a thread out of the card — the same bridge the ring strings
+between neighbours, anchored to the spot it came out of — which thins as it
+stretches and then lets go.
+
 ## The same trick, twice
 
 ![The carousel at rest: the front card centred, its number and name to the
 left, discipline and year to the right, and the full index top
-right](docs/carousel.png)
+right](docs/carousel.webp)
 
 The type either side of the ring changes as the carousel turns, and it doesn't
 crossfade. It melts, same as the cards do.
@@ -165,8 +175,9 @@ outside the filter entirely.
 
 The idea works but it isn't finished.
 
-- Clicking a card centres it. It doesn't open anything yet, so the "View" tag
-  is writing a cheque the project can't cash.
+- Clicking a card opens it: the card swells into a frame and a page builds
+  itself around it, with two more images and the next project. It's an
+  overlay with no URL, so the back button doesn't know it happened.
 - No reduced-motion path and no keyboard control.
 - The images are placeholders and they aren't mine. See
   [About the artwork](README.md#about-the-artwork).

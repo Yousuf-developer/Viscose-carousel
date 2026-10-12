@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* One breakpoint of our own: the first width above the ring's tablet band
+   (`narrowAt`, 1024 inclusive), so the project page changes layout on the
+   same pixel the type scale does. */
+@theme {
+  --breakpoint-wide: 1025px;
+  /* And the first width above the phone band (tightAt, 640 inclusive). */
+  --breakpoint-tablet: 641px;
+}
+
 /* Family names here have to match the strings in ring/params.js — nameFont,
    idxFont and textFont are looked up by name, not imported. */
 
@@ -21,7 +30,7 @@
   font-display: swap;
 }
 
-/* Numbers, years and the load counter. */
+/* Numbers, years, the load counter and the cursor's words. */
 @font-face {
   font-family: "Geist";
   src: url("/Geist-Regular.ttf") format("truetype");
@@ -30,8 +39,8 @@
   font-display: swap;
 }
 
-/* The intro heading and the cursor tag, both rasterised to canvas. Book is
-   the only cut installed, so textWeight has nothing to switch between. */
+/* The intro heading, rasterised to canvas. Book is the only cut installed,
+   so textWeight has nothing to switch between. */
 @font-face {
   font-family: "PP Neue Montreal";
   src: url("/ppneuemontreal-book.otf") format("opentype");
@@ -40,15 +49,301 @@
   font-display: swap;
 }
 
+/* The room. Defaults here so the first paint is right; overwritten at mount
+   from params.paper / params.ink so the dev panel can retheme live. */
+:root {
+  --paper: #0e0e0d;
+  --ink: #efece6;
+  /* A second voice: in the colour, not the opacity the entry animates. */
+  --ink-2: color-mix(in srgb, var(--ink) 55%, transparent);
+  /* The page's hairlines: the ink at this strength. The shader draws them
+     (data-gl="rule") and reads it from here. */
+  --rule-a: 0.15;
+  color-scheme: dark; /* retheme() flips this with the room */
+}
+
+/* The front card's colour on the room. Registered so a change of card
+   cross-fades: a transition can only interpolate a typed custom property. */
+@property --glow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0e0e0d;
+}
+
+/* Film over everything. The grain is one tile of fractal noise, desaturated;
+   its strength is the element's opacity, set from params. */
+.grain {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+}
+
+/* The room, under the work: the vignette over the glow over the paper, in
+   one element. One element because a gradient over dark paper spans only a
+   handful of eight-bit levels, and painted as a layer of its own it is
+   rounded to them on its own: the falloffs showed as rings a level apart.
+   Painted over a tile of the paper carrying ±1 level of noise (--dither, from
+   retheme), each gradient is rounded once, against the noise, and comes out
+   smooth. So their strengths ride in their colours (--glow-a, --glow-on,
+   --vig), never in an opacity, which would composite them apart again.
+
+   The glow is the room's light behind the front card. Gaussian, not a
+   linear ramp to a hard stop: the eye finds the end of a linear ramp — a
+   Mach band — and reads the glow as a disc with an edge. Placed on the front
+   of the ring by the layout loop (--glow-x, --glow-y). The vignette is the
+   room falling away toward its corners; under the work, so a card or a word
+   passing near an edge keeps its own tone. */
+.room {
+  --k: calc(var(--glow-a, 0) * var(--glow-on, 0));
+  background:
+    radial-gradient(
+      ellipse farthest-corner at 50% 50%,
+      transparent 45%,
+      color-mix(in srgb, #000 calc(8% * var(--vig, 0)), transparent) 60%,
+      color-mix(in srgb, #000 calc(22% * var(--vig, 0)), transparent) 75%,
+      color-mix(in srgb, #000 calc(38% * var(--vig, 0)), transparent) 88%,
+      color-mix(in srgb, #000 calc(50% * var(--vig, 0)), transparent) 100%
+    ),
+    radial-gradient(
+      var(--glow-w, 64vw) var(--glow-h, 45vw) at var(--glow-x, 50%)
+        var(--glow-y, 50%),
+      color-mix(in oklab, var(--glow) calc(100% * var(--k)), transparent) 0%,
+      color-mix(in oklab, var(--glow) calc(86% * var(--k)), transparent) 12%,
+      color-mix(in oklab, var(--glow) calc(62% * var(--k)), transparent) 25%,
+      color-mix(in oklab, var(--glow) calc(38% * var(--k)), transparent) 38%,
+      color-mix(in oklab, var(--glow) calc(20% * var(--k)), transparent) 50%,
+      color-mix(in oklab, var(--glow) calc(9% * var(--k)), transparent) 62%,
+      color-mix(in oklab, var(--glow) calc(3.5% * var(--k)), transparent) 75%,
+      color-mix(in oklab, var(--glow) calc(1% * var(--k)), transparent) 88%,
+      transparent 100%
+    ),
+    var(--dither, none) 0 0 / 64px 64px;
+}
+
+/* The grain is a soft-light pass in the dark room and a multiply in the
+   light one, where soft light over paper does nothing. Set by params. */
+.grain[data-blend="multiply"] {
+  mix-blend-mode: multiply;
+}
+.grain[data-blend="overlay"] {
+  mix-blend-mode: overlay;
+}
+
 html,
 body {
   height: 100%;
   margin: 0;
-  background: #fafafa;
+  color: var(--ink);
   overflow: hidden;
   overscroll-behavior: none;
 }
 
+/* On the root only. The project's name sits at a negative z-index so the
+   ring passes in front of it, and a background on body would paint over
+   anything below z-auto. */
+html {
+  background: var(--paper);
+}
+
 canvas {
   display: block;
+}
+
+/* The project page's pictures and clips. Each figure is a box the shader
+   paints; its slot (set by setOpenCopy from the shapes in order) places it
+   on the page's twelve columns, its shape gives it its proportion. Figures
+   are subgrids of the page, so every slot lines up with the strip of facts
+   above. No captions are printed beside the pictures: the words live in the
+   insights row instead, never pressed against a picture. */
+.media {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 2vw;
+}
+.media-fig {
+  grid-column: 1 / -1;
+  margin: 0;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: start;
+}
+.media-fig + .media-fig {
+  margin-top: 8vh;
+}
+.media-box {
+  grid-column: 1 / -1;
+  aspect-ratio: 3 / 2;
+}
+.media-fig[data-shape="port"] .media-box {
+  aspect-ratio: 4 / 5;
+}
+.media-fig[data-shape="wide"] .media-box {
+  aspect-ratio: 16 / 9;
+}
+
+/* Up to the tablet band: one column, portraits narrower and alternating
+   sides so a run of them still has a rhythm. */
+.media-fig[data-shape="port"] .media-box {
+  grid-column: 1 / span 9;
+}
+.media-fig[data-slot="pair-b"] .media-box,
+.media-fig[data-slot="port-r"] .media-box {
+  grid-column: 4 / -1;
+}
+
+/* Three insights, a row between the opening pictures and the rest:
+   numbered heads in the small caps, a sentence or two under each, a
+   hairline over each one. Stacked up to the tablet band. */
+.insights {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  row-gap: 5vh;
+  margin-top: 10vh;
+}
+.insight {
+  grid-column: 1 / -1;
+  /* Room for its rule, which the shader draws (data-gl="rule"). */
+  border-top: 1px solid transparent;
+  padding-top: 2.6vh;
+}
+
+@media (min-width: 1025px) {
+  /* One even gap between every piece — nothing pulled up into another
+     picture's space. */
+  .media-fig + .media-fig {
+    margin-top: 14vh;
+  }
+
+  /* The large picture, on the right. */
+  .media-fig[data-slot="lead"] .media-box {
+    grid-column: 6 / -1;
+  }
+
+  /* The smaller one, on the left. */
+  .media-fig[data-slot="offset"] .media-box {
+    grid-column: 1 / span 5;
+  }
+
+  /* A clip across the page. */
+  .media-fig[data-slot="wide"] .media-box {
+    grid-column: 2 / span 10;
+  }
+
+  /* Portraits in a pair, the second a short step below the first. */
+  .media-fig[data-slot="pair-a"] {
+    grid-column: 1 / span 6;
+  }
+  .media-fig[data-slot="pair-b"] {
+    grid-column: 7 / span 6;
+    margin-top: 22vh;
+  }
+  .media-fig[data-slot="pair-a"]:first-child + .media-fig[data-slot="pair-b"] {
+    margin-top: 8vh;
+  }
+  .media-fig[data-slot="pair-a"] .media-box,
+  .media-fig[data-slot="pair-b"] .media-box {
+    grid-column: 2 / span 4;
+  }
+
+  /* A portrait alone, on the right or the left. */
+  .media-fig[data-slot="port-r"] .media-box {
+    grid-column: 8 / span 4;
+  }
+  .media-fig[data-slot="port-l"] .media-box {
+    grid-column: 2 / span 4;
+  }
+
+  /* The insights three across, each in four of the twelve columns. */
+  .insights {
+    margin-top: 16vh;
+  }
+  .insight {
+    grid-column: span 4;
+    padding-right: 3vw;
+  }
+}
+
+/* Close, on an opened page. A disc of the page's own colour with a hairline
+   ring and a cross: against the page it is barely a shape, over a picture it
+   is a dark lens the cross reads on, so it needs no backing that comes and
+   goes. Hover fills it with ink and turns the cross a quarter on a spring;
+   the open timeline opens the disc and draws the strokes. */
+.close {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.close-disc {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 26%, transparent);
+  transition:
+    background-color 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.close-x {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* Over a scrolled page the page fades out under it instead of being cut at
+   its rim: a soft field of the paper, up once there is something under it
+   (--halo, from the layout loop). */
+.close::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--paper) 85%, transparent) 62%,
+    transparent
+  );
+  opacity: var(--halo, 0);
+  pointer-events: none;
+  z-index: -1;
+}
+.close-stroke {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 1.5px;
+  margin: -0.75px 0 0 -7px;
+  border-radius: 1px;
+  background: var(--ink);
+  transition: background-color 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.close:hover .close-disc,
+html[data-keys] .close:focus-visible .close-disc {
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.close:hover .close-stroke,
+html[data-keys] .close:focus-visible .close-stroke {
+  background: var(--paper);
+}
+.close:hover .close-x,
+html[data-keys] .close:focus-visible .close-x {
+  transform: rotate(90deg);
+}
+.close:active .close-x {
+  transform: rotate(90deg) scale(0.82);
+}
+/* Focus shows only once the keyboard is in use (data-keys, set on Tab): the
+   open moves focus here by script, and some browsers count that as visible
+   focus even after a click. */
+.close:focus-visible {
+  outline: none;
+}
+html[data-keys] .close:focus-visible {
+  outline: 1px solid color-mix(in oklab, var(--ink) 55%, transparent);
+  outline-offset: 3px;
 }
