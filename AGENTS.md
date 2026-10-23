@@ -409,7 +409,18 @@ The block (discipline, year) is split: its melt lives in a padded box that
 clips to its own ground and sits under the ring like the name's, and its
 steady row in a box of its own over the ring on the same geometry. A smear
 that spilled past the block's small box had no ground and no ink under it,
-which read as a halo round the block and, on iOS, as a white blob.
+which read as a halo round the block and, on iOS, as a white blob. On a
+phone the block does not melt at all: its words swap (`tightBlockMelt` turns
+the melt back on). At 14px the smear read as a smudge.
+
+**A tap is hit-tested on the spot, not off `over`.** The hover hit test runs
+inside the layout loop off the eased cursor, a frame behind. With a mouse that
+is the card the bead's word is offering, which is what a click should open.
+A finger has no hover: the cursor is still catching up when the tap has
+already lifted, so `onClick` on touch reads the card under the pointer from
+the planes as last drawn (`cardAt`), and the cursor is snapped under a
+finger on every press. A tap's travel allowance is `touchSlop`, not the
+mouse's five pixels, because a finger jitters that much inside a tap.
 
 **The side-card focus is one frame stale, deliberately.** The hit test that
 decides which card is hovered runs _inside_ the layout loop, but every plane

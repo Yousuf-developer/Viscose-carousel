@@ -857,6 +857,7 @@ export default function Carousel() {
         blockY: viewH * 0.5,
         under: phone ? viewH * 0.5 + W / 1.5 / 2 + 0.035 * viewW : null,
         cardTop,
+        swapBlock: phone && !params.tightBlockMelt,
       });
       styleOpen();
     };
@@ -958,6 +959,11 @@ export default function Carousel() {
     let heroGen = 0;
 
     let pointerTravel = 0; // tells a click from a drag
+    // Where a press went down, so a tap can be judged on how far the finger
+    // ended up from there — a finger wobbles inside a tap, and its path
+    // length passes any slop while its displacement stays put.
+    let downX = 0;
+    let downY = 0;
     let travelX = 0;
     let travelY = 0;
 
@@ -1811,7 +1817,15 @@ export default function Carousel() {
       pointerTravel = 0;
       travelX = e.clientX;
       travelY = e.clientY;
+      downX = e.clientX;
+      downY = e.clientY;
       trackPointer(e);
+      // A finger has no path from the last touch: the cursor starts under
+      // it, rather than easing over from wherever it was left.
+      if (coarse) {
+        cursor.x = pointer.x;
+        cursor.y = pointer.y;
+      }
       if (!interactive || openI >= 0) return;
       stopPick();
       if (coarse) beginHold();
@@ -1866,15 +1880,51 @@ export default function Carousel() {
       renderer.domElement.releasePointerCapture?.(e.pointerId);
     };
 
-    // A drag ends in a click too, so only a near-stationary press counts.
-    // `over` comes from the same hit test that decides the cursor's word, so
-    // a click only ever lands on the card the word was offering.
+    // The card under a point, from the planes as they were last drawn: the
+    // same box the shader draws, turned, leaned and swollen.
+    const cardAt = (x, y) => {
+      const count = Math.round(params.count);
+      const W = uniforms.uSize.value.x;
+      const H = uniforms.uSize.value.y;
+      for (let i = 0; i < count; i++) {
+        const sc = uniforms.uScale.value[i];
+        const hw = W * 0.5 * sc.x;
+        const hh = H * 0.5 * sc.y;
+        if (hw < 1 || hh < 1) continue;
+        const c = uniforms.uPos.value[i];
+        const rot = uniforms.uRot.value[i];
+        const cr = Math.cos(rot);
+        const sr = Math.sin(rot);
+        const qx = x - c.x;
+        const qy = y - c.y;
+        if (
+          Math.abs(qx * cr + qy * sr) <= hw &&
+          Math.abs(-qx * sr + qy * cr) <= hh
+        )
+          return i;
+      }
+      return -1;
+    };
+
+    // A drag ends in a click too, so only a near-stationary press counts —
+    // for a finger, one that ends within the touch slop of where it went
+    // down, since it wobbles inside a tap. With a mouse, `over` comes from the same hit test
+    // that decides the cursor's word, so a click only ever lands on the card
+    // the word was offering. A tap reads the card under the finger now: that
+    // hit test runs off the eased cursor, a frame behind and still catching
+    // up with a finger that has already lifted, and taps went missing.
     const onClick = () => {
-      if (!interactive || pointerTravel >= 5) return;
+      if (!interactive) return;
+      const moved = coarse
+        ? Math.hypot(travelX - downX, travelY - downY) > params.touchSlop
+        : pointerTravel >= 5;
+      if (moved) return;
       // Open, closing is the Close button's and Escape's; the picture is only
       // a picture.
-      if (openI >= 0 || over < 0) return;
-      pick(over);
+      if (openI >= 0) return;
+      const i = coarse ? cardAt(pointer.x, pointer.y) : over;
+      if (i < 0) return;
+      pick(i);
     };
 
     container.addEventListener("wheel", onWheel, { passive: false });

@@ -99,6 +99,8 @@ function createGroup(side, groups, params, room) {
   // and alternating would leave whichever row it left holding something stale.
   let prev = ["", ""];
   let moving = [false, false];
+  // Swap the words instead of melting them (the block, on a phone).
+  let instant = false;
 
   const draw = () => {
     const g = groups[side];
@@ -159,8 +161,9 @@ function createGroup(side, groups, params, room) {
     prev = next;
 
     // Card changed but this group did not. Nothing to melt, and no reason to
-    // switch the threshold on.
-    if (!moving[0] && !moving[1]) {
+    // switch the threshold on. Or the words are swapped outright.
+    if (instant || (!moving[0] && !moving[1])) {
+      moving = [false, false];
       m.t = 1;
       draw();
       return;
@@ -183,7 +186,15 @@ function createGroup(side, groups, params, room) {
     draw();
   };
 
-  return { m, set, settle, draw };
+  return {
+    m,
+    set,
+    settle,
+    draw,
+    instant: (v) => {
+      instant = !!v;
+    },
+  };
 }
 
 // Which way round the room is: ink on dark paper, or on light.
@@ -245,11 +256,12 @@ export function createMeta(refs, params) {
     }
   };
 
-  // layout: { textK, viewW, titleVw, blockX, blockW, blockY, under, cardTop }
-  // — the geometry the block hangs off, passed in rather than read, so this
-  // stays a pure function of the window it is told about. `under`, on a
-  // phone, is the top of the space under the card, where the block goes
-  // instead of beside it. The name's size comes in resolved (titleVwNow in
+  // layout: { textK, viewW, titleVw, blockX, blockW, blockY, under, cardTop,
+  // swapBlock } — the geometry the block hangs off, passed in rather than
+  // read, so this stays a pure function of the window it is told about.
+  // `under`, on a phone, is the top of the space under the card, where the
+  // block goes instead of beside it; `swapBlock` has the block's words swap
+  // rather than melt there. The name's size comes in resolved (titleVwNow in
   // the component), so the page's title can be set from the very same figure.
   const style = ({
     textK,
@@ -260,7 +272,9 @@ export function createMeta(refs, params) {
     blockY,
     under,
     cardTop,
+    swapBlock,
   }) => {
+    right.instant(swapBlock);
     const gapPx = (params.titleGap / 100) * (viewW * 0.65);
     const titlePx = (titleVw * viewW) / 100;
     // In px with floors: in vw alone the small type fell to 6px on a phone.

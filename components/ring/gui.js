@@ -186,6 +186,7 @@ export function mountGui(GUI, { params, state, info, actions }) {
   meta.add(params, "nameEdge", 8, 800, 1).name("threshold gain").onChange(setThreshold); // prettier-ignore
   meta.add(params, "nameCut", 0.05, 0.95, 0.01).name("threshold cut").onChange(setThreshold); // prettier-ignore
   meta.add(params, "nameSoften", 0, 3, 0.05).name("soften");
+  meta.add(params, "tightBlockMelt").name("melt block on a phone").onChange(styleMeta); // prettier-ignore
   // Re-announces whatever is already at the front, so the morph can be watched
   // without spinning to a new card each time.
   meta.add({ again: actions.replayMeta }, "again").name("play again");

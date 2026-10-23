@@ -178,6 +178,10 @@ export function defaultParams() {
     titleSize: 13, // vw
     narrowTitle: 1, // x below narrowAt
     tightTitle: 1.4, // x below tightAt: as large as the longest name allows
+    // Below tightAt the block's words (discipline, year) swap instead of
+    // melting: at 14px the smear reads as a smudge, and a phone has no
+    // frames to spare on it. The name still melts. On melts the block too.
+    tightBlockMelt: false,
     titleGap: 2, // vh between the name's foot and the card's top edge
     titleBlur: 0.15, // em the name smears to in its morph; the small rows use nameBlur
     titleDim: 1, // 1 is ink; lower sets the name back into the room
