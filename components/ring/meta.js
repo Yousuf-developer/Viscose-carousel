@@ -15,6 +15,18 @@ import { PROJECTS } from "./projects";
  * what makes the words run together and pull apart instead of crossfading.
  * None of it is per-glyph.
  *
+ * The threshold is built from GPU filters, not an SVG one. The melting rows
+ * are painted white on black (black on white in the light room) inside a
+ * mask, so their coverage is luminance; `brightness()` then `contrast()` is
+ * the same gain and cut a colour matrix applied to alpha, out = edge * (in -
+ * cut). A layer of the ink is multiplied onto the mask, and the box lightens
+ * (darkens) onto the room, so black is the identity and nothing shows where
+ * there is no word. It used to be `filter: url(#svg)` with an feColorMatrix
+ * on alpha, and WebKit renders reference filters in software: on a phone at
+ * 3x the melt cost 50-150 ms a frame and every swipe ended in a slideshow.
+ * The CSS filters and blends are Core Animation's, and the same melt is
+ * free.
+ *
  * A word that is not actually changing — the same year twice running — is
  * held instead of melted. Holding it in place is not enough on its own: the
  * threshold has to span both layers for them to fuse, so anything inside it
@@ -31,27 +43,55 @@ const SLOTS = 2;
 
 const slotsOf = (row) => row?.firstElementChild?.children;
 
+const smoothstep = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
 // One word's share of a morph. f = 1 present, 0 gone. Opacity falls away far
 // slower than the blur climbs, so the word still carries alpha well into its
 // smear — without that there is nothing for the threshold to weld the other
 // one to. Applied per word, not per row, so a held word can be left alone.
+//
+// The smear stops at three times the blur. A stroke blurred that wide peaks
+// well under the cut even where two words overlap, so past it the threshold
+// has nothing left to find, and the word is let go instead of blurred on: a
+// blur that keeps growing is the one part of the melt that still costs
+// frames once the filters run on the GPU. Let go over a stretch rather than
+// cut, so with no smear at all the word is not still solid when it goes.
 function fade(el, f, blur) {
   if (!el) return;
   if (f >= 1) {
     el.style.filter = "none";
     el.style.opacity = "1";
-  } else if (f <= 0) {
-    // Cleared as well as hidden, so a spent word is not left holding a 100px
+    return;
+  }
+  const a = f <= 0 ? 0 : Math.pow(f, 0.4) * smoothstep(0.1, 0.22, f);
+  if (a <= 0.001) {
+    // Cleared as well as hidden, so a spent word is not left holding a wide
     // blur the compositor has to keep around.
     el.style.filter = "none";
     el.style.opacity = "0";
-  } else {
-    el.style.filter = `blur(${Math.min(blur / f - blur, 100)}px)`;
-    el.style.opacity = `${Math.pow(f, 0.4)}`;
+    return;
   }
+  const b = Math.min(blur / f - blur, blur * 3);
+  el.style.filter = b > 0.01 ? `blur(${b.toFixed(2)}px)` : "none";
+  el.style.opacity = a.toFixed(3);
 }
 
-function createGroup(side, groups, params) {
+// The alpha threshold, as filters the GPU runs: out = edge * (in - cut) on
+// the mask's luminance, then a touch of blur standing in for antialiasing.
+// In the light room the words are black on white, so the cut is mirrored:
+// coverage a reads as 1 - a, and a word has to clear 1 - cut from above.
+function threshold(params, dark) {
+  const edge = Math.max(1, params.nameEdge);
+  const cut = dark ? params.nameCut : 1 - params.nameCut;
+  const c = 2 * edge * cut + 1;
+  const k = edge / c;
+  return `brightness(${k.toFixed(4)}) contrast(${c.toFixed(2)}) blur(${params.nameSoften}px)`;
+}
+
+function createGroup(side, groups, params, room) {
   const m = { t: 1 };
   // What is on screen, and which of it the morph in flight is moving. Both
   // rows are rewritten on every change rather than trading places: a word can
@@ -86,8 +126,7 @@ function createGroup(side, groups, params) {
     // hardens glyph edges, and at this size that is the difference between
     // type that is set and type that is stamped.
     if (g.goo) {
-      g.goo.style.filter =
-        t >= 1 ? "none" : `url(#name-goo) blur(${params.nameSoften}px)`;
+      g.goo.style.filter = t >= 1 ? "none" : threshold(params, room.dark);
     }
   };
 
@@ -144,27 +183,65 @@ function createGroup(side, groups, params) {
     draw();
   };
 
-  return { m, set, settle };
+  return { m, set, settle, draw };
 }
 
+// Which way round the room is: ink on dark paper, or on light.
+const isDark = (hex) => {
+  const h = String(hex).replace("#", "");
+  const n = parseInt(h.length === 3 ? h.replace(/./g, "$&$&") : h, 16);
+  if (Number.isNaN(n)) return true;
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;
+};
+
 /**
- * refs: { groups, list, loader, cut, live } — DOM handed over from the
- * component. `groups` is the shape the JSX populates, one entry per side.
+ * refs: { groups, list, loader, live, count } — DOM handed over from the
+ * component. `groups` is the shape the JSX populates, one entry per side:
+ * the box, the mask (`goo`) with its two melting rows, the ink layer over
+ * it, and the steady row.
  */
 export function createMeta(refs, params) {
-  const { groups, loader, cut, live, count } = refs;
-  const left = createGroup("left", groups, params);
-  const right = createGroup("right", groups, params);
+  const { groups, loader, live, count } = refs;
+  // Which way round the room is, for the mask's polarity; set by retheme.
+  const room = { dark: true };
+  const left = createGroup("left", groups, params, room);
+  const right = createGroup("right", groups, params, room);
 
-  // Only the alpha row does any work; colour passes straight through.
+  // The threshold is read off the params on every frame of a morph; this
+  // only redraws one in flight so a change shows at once.
   const setThreshold = () => {
-    cut?.setAttribute(
-      "values",
-      `1 0 0 0 0
-       0 1 0 0 0
-       0 0 1 0 0
-       0 0 0 ${params.nameEdge} ${-params.nameEdge * params.nameCut}`,
-    );
+    left.draw();
+    right.draw();
+  };
+
+  // The mask, the ink and the blend follow the room. Black is the identity
+  // for lighten and white for darken, so the mask's ground vanishes and only
+  // the words, thresholded and inked, reach the page. Separate from style()
+  // so a change of room can redo it without re-measuring anything.
+  const retheme = () => {
+    const dark = isDark(params.paper);
+    room.dark = dark;
+    for (const side of SIDES) {
+      const g = groups[side];
+      if (!g?.box) continue;
+      g.box.style.mixBlendMode = dark ? "lighten" : "darken";
+      // The same ground on the box as on the mask: the mask is a layer of
+      // its own and can snap a pixel short of the box, and the ink
+      // multiplied over nothing is ink — a hairline along the edge.
+      g.box.style.backgroundColor = dark ? "#000" : "#fff";
+      if (g.goo) {
+        g.goo.style.backgroundColor = dark ? "#000" : "#fff";
+        g.goo.style.color = dark ? "#fff" : "#000";
+      }
+      if (g.ink) {
+        g.ink.style.backgroundColor = params.ink;
+        g.ink.style.mixBlendMode = dark ? "multiply" : "screen";
+        g.ink.style.opacity = side === "left" ? `${params.titleDim}` : "";
+      }
+    }
   };
 
   // layout: { textK, viewW, titleVw, blockX, blockW, blockY, under, cardTop }
@@ -210,9 +287,12 @@ export function createMeta(refs, params) {
 
       const rowPx = isTitle ? titlePx : metaPx;
       g.blur = isTitle ? titlePx * params.titleBlur : params.nameBlur;
-      // Roomy, because this box is what the filter region is measured off and
-      // the blur needs somewhere to go.
-      const h = rowPx * 3;
+      // Roomy, because this box is what the filters are measured off and the
+      // blur needs somewhere to go. Even and whole, like every edge of the
+      // box below: the box blends onto the room, and a blended box on a
+      // fraction of a pixel has its backdrop resampled, which showed as a
+      // hairline round it and the paper's grain smoothed inside it.
+      const h = 2 * Math.round(rowPx * 1.5);
       g.box.style.height = `${h}px`;
 
       if (isTitle) {
@@ -223,7 +303,7 @@ export function createMeta(refs, params) {
         g.box.style.width = "100vw";
         g.box.style.left = "0";
         g.box.style.right = "auto";
-        g.box.style.top = `${cardTop - gapPx - titlePx * 0.5 - h * 0.5}px`;
+        g.box.style.top = `${Math.round(cardTop - gapPx - titlePx * 0.5 - h * 0.5)}px`;
         g.box.style.bottom = "";
         // Both: the class centres with Tailwind's `translate` property, which
         // `transform: none` does not touch.
@@ -233,10 +313,10 @@ export function createMeta(refs, params) {
       } else {
         // Discipline and year, under the counter: right of the card, or on a
         // phone under it.
-        g.box.style.width = `${Math.max(160, blockW)}px`;
-        g.box.style.left = `${blockX}px`;
+        g.box.style.width = `${Math.round(Math.max(160, blockW))}px`;
+        g.box.style.left = `${Math.round(blockX)}px`;
         g.box.style.right = "auto";
-        g.box.style.top = `${midY + metaPx * 0.75}px`;
+        g.box.style.top = `${Math.round(midY + metaPx * 0.75)}px`;
         g.box.style.bottom = "";
         g.box.style.transform = "";
         g.box.style.translate = "";
@@ -255,8 +335,10 @@ export function createMeta(refs, params) {
         row.style.gap = isTitle
           ? "0"
           : `${Math.max(metaPx * 0.6, (params.metaGapR * viewW) / 100)}px`;
-        // On the row, not the words: the morph owns the words' opacity.
-        row.style.opacity = isTitle ? `${params.titleDim}` : "";
+        // On the steady row, not the words: the morph owns the words'
+        // opacity, and the melting rows are a mask, dimmed through the ink.
+        row.style.opacity =
+          isTitle && layer === g.plain ? `${params.titleDim}` : "";
         const [lead, trail] = row.children;
         // The number has a counter of its own, so the name row paints only
         // the name. Its morph carries on underneath.
@@ -301,7 +383,7 @@ export function createMeta(refs, params) {
       loader.style.fontWeight = `${params.idxWeight}`;
     }
 
-    setThreshold();
+    retheme();
   };
 
   // The name leans with the ring. On the rows, not the box: the box is what
@@ -344,5 +426,5 @@ export function createMeta(refs, params) {
     gsap.killTweensOf(right.m);
   };
 
-  return { show, style, setThreshold, settle, lean, dispose };
+  return { show, style, setThreshold, retheme, settle, lean, dispose };
 }

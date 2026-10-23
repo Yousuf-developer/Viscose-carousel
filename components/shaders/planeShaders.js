@@ -53,10 +53,13 @@ export const fragmentShader = /* glsl */ `
   // pixel in the loop below would be absurd.
   uniform vec4  uScale[MAX_PLANES];
 
-  // honey threads between neighbours, driven from JS
+  // honey threads between neighbours, driven from JS. The ends ride in xy;
+  // the rest of each row carries what every pixel would otherwise work out
+  // for itself: the midpoint (A.zw), and the cull radius squared and the
+  // length (B.zw).
   uniform float uLinkCount;
-  uniform vec2  uLinkA[MAX_LINKS];
-  uniform vec2  uLinkB[MAX_LINKS];
+  uniform vec4  uLinkA[MAX_LINKS];
+  uniform vec4  uLinkB[MAX_LINKS];
   // (radius at the ends, radius at the pinch, droop, fillet)
   uniform vec4  uLinkPar[MAX_LINKS];
 
@@ -232,12 +235,10 @@ export const fragmentShader = /* glsl */ `
   // full merge it bulges out past the flat sides of the planes themselves.
   // This is swept as a box, so while the planes overlap it stays entirely
   // inside them and the silhouette reads as one flat card.
-  float sdBridge(vec2 p, vec2 a, vec2 b, float rEnd, float rMid, float sag) {
-    vec2 ba = b - a;
-    float len = length(ba);
+  float sdBridge(vec2 p, vec2 a, vec2 b, float len, float rEnd, float rMid, float sag) {
     if (len < 0.001) return 1e6;
 
-    vec2 dir = ba / len;
+    vec2 dir = (b - a) / len;
     vec2 nrm = vec2(-dir.y, dir.x);
 
     vec2 q = p - (a + b) * 0.5;
@@ -284,8 +285,10 @@ export const fragmentShader = /* glsl */ `
 
   // One plane's picture at one point of it. The atlas by default; the full-
   // size copy for the opened card's cell, cover-fitted to a hero that has
-  // left 3:2; the footage over either while it plays. All are sampled and
-  // masked in, so the derivatives the mip selection needs stay defined.
+  // left 3:2; the footage over either while it plays. Each is masked in by
+  // cell, inside a branch on its mix alone — uniform, so every fragment
+  // takes it together and the derivatives the mip selection needs stay
+  // defined — and the ring at rest pays for the atlas only.
   vec3 artAt(vec2 uv, float cell, vec2 fr) {
     float hero = 1.0 - step(0.5, abs(cell - uHeroP.x));
     uv = mix(uv, 0.5 + (uv - 0.5) * uHeroP.zw, hero);
@@ -301,13 +304,19 @@ export const fragmentShader = /* glsl */ `
     } else {
       c = texture2D(uAtlas, atlasUV(uv, cell)).rgb;
     }
-    c = mix(c, texture2D(uHero, uv).rgb, hero * uHeroP.y);
-    float more = step(uMoreP.x - 0.5, cell);
-    c = mix(c, texture2D(uMore, moreUV(uv, cell)).rgb, more * uMoreP.z);
+    if (uHeroP.y > 0.0) {
+      c = mix(c, texture2D(uHero, uv).rgb, hero * uHeroP.y);
+    }
+    if (uMoreP.z > 0.0) {
+      float more = step(uMoreP.x - 0.5, cell);
+      c = mix(c, texture2D(uMore, moreUV(uv, cell)).rgb, more * uMoreP.z);
+    }
     // Last, so a clip plays over a page picture as well as over a card.
-    float live = 1.0 - step(0.5, abs(cell - uLiveP.x));
-    vec3 lc = texture2D(uLive, 0.5 + (uv - 0.5) * uLiveP.zw).rgb;
-    c = mix(c, lc, live * uLiveP.y);
+    if (uLiveP.y > 0.0) {
+      float live = 1.0 - step(0.5, abs(cell - uLiveP.x));
+      vec3 lc = texture2D(uLive, 0.5 + (uv - 0.5) * uLiveP.zw).rgb;
+      c = mix(c, lc, live * uLiveP.y);
+    }
     // The bead wears the ink, whatever the sheets above made of its cell —
     // put through the room's tone backwards, so it comes out of it as the
     // ink the page's type wears.
@@ -402,13 +411,12 @@ export const fragmentShader = /* glsl */ `
       // antialiasing can reach.
       if (par.x <= -3.0) continue;
 
-      vec2 a = uLinkA[i];
-      vec2 b = uLinkB[i];
-      vec2 mid = (a + b) * 0.5;
-      float reach = length(b - a) * 0.5 + par.x + par.w + 8.0;
-      if (dot(p - mid, p - mid) > reach * reach) continue;
+      vec4 la = uLinkA[i];
+      vec4 lb = uLinkB[i];
+      vec2 dm = p - la.zw;
+      if (dot(dm, dm) > lb.z) continue;
 
-      d = smin(d, sdBridge(p, a, b, par.x, par.y, par.z), par.w);
+      d = smin(d, sdBridge(p, la.xy, lb.xy, lb.w, par.x, par.y, par.z), par.w);
     }
 
     // Surface tension wobble, decays to zero so resting planes are dead flat.
@@ -437,7 +445,7 @@ export const fragmentShader = /* glsl */ `
       dd = smin(pill, sdDrop(p, uBead.xy, uBead.zw, rh, uBeadR.y), 3.0);
       db = dd;
       if (uBeadT.z > -3.0) {
-        float dh = sdBridge(p, uBeadT.xy, uBead.xy, uBeadT.z, uBeadT.w, uBeadL.z);
+        float dh = sdBridge(p, uBeadT.xy, uBead.xy, length(uBead.xy - uBeadT.xy), uBeadT.z, uBeadT.w, uBeadL.z);
         db = smin(db, dh, uBeadL.w);
       }
       d = smin(d, db, uBeadR.z);

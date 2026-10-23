@@ -386,6 +386,26 @@ visibly thicken for the length of the morph. Hence a third row outside the
 filtered subtree. All three rows always carry all the words, painted or not,
 because the row is what positions the others.
 
+**The threshold is CSS filters and blends, never an SVG filter.** The two
+melting rows sit in a mask painted white on black (black on white in the
+light room), thresholded with `brightness()` then `contrast()` — the same
+gain and cut, on luminance instead of alpha — then a layer of the ink is
+multiplied on and the box lightens (darkens) the lot onto the room, so the
+mask's black ground never shows. `meta.retheme()` sets the three with the
+room. It used to be `filter: url(#svg)` with an feColorMatrix on alpha, and
+WebKit renders reference filters in software, at device resolution, over the
+blur's whole outset: on a phone the melt cost 50–150 ms a frame and every
+swipe ended in a slideshow, the one thing the Mac in Chrome never showed. The
+CSS path is Core Animation's and costs nothing measurable; the word blur is
+capped at three smears for the same reason (past that the threshold finds
+nothing anyway). Because the blend is on the box, the box must carry nothing
+but the rows — anything else in it would be blended too. Two details are
+load-bearing: the box wears the mask's ground as well (the mask is a layer
+of its own and can snap a pixel short of the box, and ink multiplied over
+nothing is ink, a hairline round the block), and `meta.style()` rounds every
+edge of the box to a whole, even pixel, because a blended box on a fraction
+of a pixel has its backdrop resampled, which showed as the same hairline.
+
 **The side-card focus is one frame stale, deliberately.** The hit test that
 decides which card is hovered runs _inside_ the layout loop, but every plane
 needs an answer before the loop reaches that card. `focusPos` is latched at the

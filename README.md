@@ -319,9 +319,11 @@ Issues and pull requests are welcome.
 
 ## Credits
 
-- The gooey text morph — two blurred copies fused through an SVG alpha
+- The gooey text morph — two blurred copies fused through an alpha
   threshold — is a widely circulated CodePen technique, adapted here to run
-  one-shot per card change instead of on a loop.
+  one-shot per card change instead of on a loop, with the threshold built
+  from CSS filters and blend modes rather than an SVG filter so it stays on
+  the GPU in Safari.
 - Simplex noise in the ring shader is
   [webgl-noise](https://github.com/ashima/webgl-noise) by Ian McEwan (Ashima
   Arts) and Stefan Gustavson, MIT.

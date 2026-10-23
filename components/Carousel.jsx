@@ -91,7 +91,6 @@ export default function Carousel() {
   const glowRef = useRef(null);
   const grainRef = useRef(null);
   const liveRef = useRef(null);
-  const cutRef = useRef(null);
   // The opened project's page: header and footer around the frame, then the
   // statement, the other images and the way on. Filled per open from
   // PROJECTS, never through React state.
@@ -121,8 +120,8 @@ export default function Carousel() {
   // happens inside, the two rows that melt within it, and one more row outside
   // for words carrying over unchanged. See ring/meta.js.
   const metaRef = useRef({
-    left: { box: null, goo: null, layers: [], plain: null },
-    right: { box: null, goo: null, layers: [], plain: null },
+    left: { box: null, goo: null, layers: [], ink: null, plain: null },
+    right: { box: null, goo: null, layers: [], ink: null, plain: null },
   });
 
   useEffect(() => {
@@ -154,7 +153,9 @@ export default function Carousel() {
     // happen: the context is released explicitly rather than left to GC.
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      // No multisampling: the pass is one screen-filling quad that draws
+      // its own edges (fwidth), so MSAA only costs tile memory and a resolve.
+      renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
     } catch (err) {
       console.error("[ring] could not create a WebGL context:", err);
       return;
@@ -200,11 +201,14 @@ export default function Carousel() {
         ),
       },
       uLinkCount: { value: 0 },
+      // xy = the end, zw = the midpoint (A) and the cull radius squared and
+      // the length (B), worked out here once rather than per pixel: a vec2
+      // costs a full vec4 row either way.
       uLinkA: {
-        value: Array.from({ length: MAX_LINKS }, () => new THREE.Vector2()),
+        value: Array.from({ length: MAX_LINKS }, () => new THREE.Vector4()),
       },
       uLinkB: {
-        value: Array.from({ length: MAX_LINKS }, () => new THREE.Vector2()),
+        value: Array.from({ length: MAX_LINKS }, () => new THREE.Vector4()),
       },
       // (rEnd, rMid, sag, fillet), packed to stay inside the uniform budget.
       uLinkPar: {
@@ -335,12 +339,13 @@ export default function Carousel() {
         groups: metaRef.current,
         list: listEl,
         loader: loaderEl,
-        cut: cutRef.current,
         live: liveRef.current,
         count: countRef.current,
       },
       params,
     );
+    // The mask and the ink follow the paper and the ink.
+    rethemeHooks.push(meta.retheme);
 
     /* ---------------------------------------------------------------- art */
     // The atlas is bound on frame one and fills in as images arrive, so the
@@ -1911,7 +1916,7 @@ export default function Carousel() {
     // seed's own birth. Both have to finish before there is anything to
     // launch, so counting bytes alone leaves the number sitting on 100 waiting
     // for a condition nobody told the viewer about.
-    const loading = { shown: 0 };
+    const loading = { shown: 0, text: "" };
 
     const tickLoader = (dt) => {
       const target = Math.min(loadProg, clamp01(state.progress));
@@ -1919,7 +1924,13 @@ export default function Carousel() {
 
       // Never 000; that reads as nothing happening.
       const n = Math.min(100, Math.max(1, Math.round(loading.shown * 100)));
-      if (loaderEl) loaderEl.textContent = String(n).padStart(3, "0");
+      const text = String(n).padStart(3, "0");
+      // Only on a change: setting the same text again still replaces the
+      // node, and that was a layout and a paint on every frame for ever.
+      if (loaderEl && text !== loading.text) {
+        loading.text = text;
+        loaderEl.textContent = text;
+      }
 
       if (!launchReady && n >= 100) {
         launchReady = true;
@@ -2936,18 +2947,28 @@ export default function Carousel() {
         const rEnd = edgeHalf * w - params.dissolve;
         const rMid = rEnd * (1 - (1 - params.pinch) * smoothstep(0, 0.7, v));
 
-        uniforms.uLinkA.value[l].copy(ca);
-        uniforms.uLinkB.value[l].copy(cb);
+        // Per link, not global: with staggered generations these are all at
+        // different stages. Never wider than the neck it rounds.
+        const fillet = Math.min(
+          params.fillet * g * smoothstep(0, 0.35, v),
+          Math.max(rMid, 0) * 1.5,
+        );
+        // Anything further from the midpoint than this cannot reach the
+        // surface; the shader tests it before it does any bridge maths.
+        const len = Math.hypot(cb.x - ca.x, cb.y - ca.y);
+        const reach = len * 0.5 + rEnd + fillet + 8;
+        uniforms.uLinkA.value[l].set(
+          ca.x,
+          ca.y,
+          (ca.x + cb.x) * 0.5,
+          (ca.y + cb.y) * 0.5,
+        );
+        uniforms.uLinkB.value[l].set(cb.x, cb.y, reach * reach, len);
         uniforms.uLinkPar.value[l].set(
           rEnd,
           rMid,
           params.sag * g * Math.pow(v, 1.5),
-          // Per link, not global: with staggered generations these are all at
-          // different stages. Never wider than the neck it rounds.
-          Math.min(
-            params.fillet * g * smoothstep(0, 0.35, v),
-            Math.max(rMid, 0) * 1.5,
-          ),
+          fillet,
         );
       }
       for (let l = linkCount; l < MAX_LINKS; l++) {
@@ -3560,9 +3581,14 @@ export default function Carousel() {
       </ul>
 
       {/* Three rows per side, identical in structure and all carrying both
-          words: two inside the filtered wrapper that melt into each other, and
-          one outside it for words carrying over unchanged. Which row paints
-          what is decided per change — see ring/meta.js.
+          words: two inside the mask that melt into each other, and one
+          outside it for words carrying over unchanged. Which row paints
+          what is decided per change — see ring/meta.js. The mask paints its
+          words white on black and is thresholded by filters; the layer after
+          it multiplies the ink on, and the box lightens the result onto the
+          room (meta.retheme sets all three, and swaps them for a light
+          room), so the black ground never shows. That blend is why the box
+          can carry nothing else.
 
           Hidden from the accessibility tree; a card is announced once, in
           full, from the live region below. */}
@@ -3592,8 +3618,8 @@ export default function Carousel() {
                 metaRef.current[side].goo = el;
               }}
               className="absolute inset-0"
-              // Promoted up front, so switching the goo on and off is not also
-              // a compositor layer being created and thrown away.
+              // Promoted up front, so switching the threshold on and off is
+              // not also a compositor layer being created and thrown away.
               style={{ willChange: "filter" }}
             >
               {[0, 1].map((i) => (
@@ -3609,6 +3635,12 @@ export default function Carousel() {
                 </span>
               ))}
             </span>
+            <span
+              ref={(el) => {
+                metaRef.current[side].ink = el;
+              }}
+              className="absolute inset-0"
+            />
             <span
               ref={(el) => {
                 metaRef.current[side].plain = el;
@@ -3880,37 +3912,6 @@ export default function Carousel() {
       />
 
       <div ref={liveRef} aria-live="polite" className="sr-only" />
-
-      {/* Alpha multiplied up hard and biased down, so a pixel is either fully
-          opaque or gone. That is what fuses two blurred words into one
-          silhouette instead of laying them over each other. Region is
-          oversized because the blur bleeds well outside the text's own box. */}
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute h-0 w-0"
-        focusable="false"
-      >
-        <defs>
-          <filter
-            id="name-goo"
-            x="-20%"
-            y="-100%"
-            width="140%"
-            height="300%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feColorMatrix
-              ref={cutRef}
-              in="SourceGraphic"
-              type="matrix"
-              values="1 0 0 0 0
-                      0 1 0 0 0
-                      0 0 1 0 0
-                      0 0 0 255 -140"
-            />
-          </filter>
-        </defs>
-      </svg>
     </>
   );
 }

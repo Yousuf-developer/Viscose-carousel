@@ -130,6 +130,10 @@ It can't use the shader though, because it's DOM text. So it does the same
 thing in a completely different medium. Two copies of the words are stacked,
 one blurred out as the other blurs in, and the pair get run through an alpha
 threshold that forces everything above a cut fully opaque and drops the rest.
+(The threshold is brightness and contrast on a white-on-black mask of the
+words, with the ink multiplied on and the box blended onto the room. An SVG
+filter did it on alpha directly, and WebKit runs those in software: on a
+phone it was most of a second of dropped frames after every swipe.)
 
 Two soft edges drifting past each other cross that cut as one shape.
 
