@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import * as THREE from "three";
 import gsap from "gsap";
 
@@ -119,9 +119,18 @@ export default function Carousel() {
   // Per side: the box that positions the lockup, the filtered wrapper the goo
   // happens inside, the two rows that melt within it, and one more row outside
   // for words carrying over unchanged. See ring/meta.js.
+  // The right group's steady row has a box of its own (`plainBox`), over the
+  // ring; its melt sits under the ring with the name's. See ring/meta.js.
   const metaRef = useRef({
     left: { box: null, goo: null, layers: [], ink: null, plain: null },
-    right: { box: null, goo: null, layers: [], ink: null, plain: null },
+    right: {
+      box: null,
+      goo: null,
+      layers: [],
+      ink: null,
+      plain: null,
+      plainBox: null,
+    },
   });
 
   useEffect(() => {
@@ -1314,7 +1323,11 @@ export default function Carousel() {
     };
 
     const metaBoxes = () =>
-      [metaRef.current.left.box, metaRef.current.right.box].filter(Boolean);
+      [
+        metaRef.current.left.box,
+        metaRef.current.right.box,
+        metaRef.current.right.plainBox,
+      ].filter(Boolean);
 
     // Which plane is wearing a given cell right now. The deal moves with the
     // ring, so this is answered when asked, not stored.
@@ -1421,6 +1434,7 @@ export default function Carousel() {
       tl.to(
         [
           metaRef.current.right.box,
+          metaRef.current.right.plainBox,
           ...(flip ? [] : [bigBox]),
           ...siteEls(),
         ].filter(Boolean),
@@ -1664,9 +1678,16 @@ export default function Carousel() {
         bigBox.style.translate = "none";
         bigBox.style.zIndex = "-1";
       }
-      gsap.set([metaRef.current.right.box, ...siteEls()].filter(Boolean), {
-        opacity: 1,
-      });
+      gsap.set(
+        [
+          metaRef.current.right.box,
+          metaRef.current.right.plainBox,
+          ...siteEls(),
+        ].filter(Boolean),
+        {
+          opacity: 1,
+        },
+      );
       if (glowRef.current) gsap.set(glowRef.current, { "--glow-on": 1 });
       gsap.killTweensOf([els.body, adv]);
       opening.f = 0;
@@ -3588,7 +3609,9 @@ export default function Carousel() {
           it multiplies the ink on, and the box lightens the result onto the
           room (meta.retheme sets all three, and swaps them for a light
           room), so the black ground never shows. That blend is why the box
-          can carry nothing else.
+          can carry nothing else. The right group's steady row has a box of
+          its own, over the ring; the melt's box sits under the ring like
+          the name's, where the blend has only the room beneath it.
 
           Hidden from the accessibility tree; a card is announced once, in
           full, from the live region below. */}
@@ -3604,53 +3627,68 @@ export default function Carousel() {
             <span />
           </span>
         );
-        return (
-          <div
-            key={side}
+        const plainRow = (
+          <span
             ref={(el) => {
-              metaRef.current[side].box = el;
+              metaRef.current[side].plain = el;
             }}
-            aria-hidden="true"
-            className="pointer-events-none fixed top-1/2 z-10 -translate-y-1/2 tracking-[-0.01em] text-(--ink)"
+            className="absolute inset-0 flex items-center"
+            style={{ justifyContent: justify }}
           >
-            <span
+            {row}
+          </span>
+        );
+        return (
+          <Fragment key={side}>
+            <div
               ref={(el) => {
-                metaRef.current[side].goo = el;
+                metaRef.current[side].box = el;
               }}
-              className="absolute inset-0"
-              // Promoted up front, so switching the threshold on and off is
-              // not also a compositor layer being created and thrown away.
-              style={{ willChange: "filter" }}
+              aria-hidden="true"
+              className="pointer-events-none fixed top-1/2 z-10 -translate-y-1/2 tracking-[-0.01em] text-(--ink)"
             >
-              {[0, 1].map((i) => (
-                <span
-                  key={i}
-                  ref={(el) => {
-                    metaRef.current[side].layers[i] = el;
-                  }}
-                  className="absolute inset-0 flex items-center"
-                  style={{ justifyContent: justify }}
-                >
-                  {row}
-                </span>
-              ))}
-            </span>
-            <span
-              ref={(el) => {
-                metaRef.current[side].ink = el;
-              }}
-              className="absolute inset-0"
-            />
-            <span
-              ref={(el) => {
-                metaRef.current[side].plain = el;
-              }}
-              className="absolute inset-0 flex items-center"
-              style={{ justifyContent: justify }}
-            >
-              {row}
-            </span>
-          </div>
+              <span
+                ref={(el) => {
+                  metaRef.current[side].goo = el;
+                }}
+                className="absolute inset-0"
+                // Promoted up front, so switching the threshold on and off is
+                // not also a compositor layer being created and thrown away.
+                style={{ willChange: "filter" }}
+              >
+                {[0, 1].map((i) => (
+                  <span
+                    key={i}
+                    ref={(el) => {
+                      metaRef.current[side].layers[i] = el;
+                    }}
+                    className="absolute inset-0 flex items-center"
+                    style={{ justifyContent: justify }}
+                  >
+                    {row}
+                  </span>
+                ))}
+              </span>
+              <span
+                ref={(el) => {
+                  metaRef.current[side].ink = el;
+                }}
+                className="absolute inset-0"
+              />
+              {side === "left" && plainRow}
+            </div>
+            {side === "right" && (
+              <div
+                ref={(el) => {
+                  metaRef.current[side].plainBox = el;
+                }}
+                aria-hidden="true"
+                className="pointer-events-none fixed top-1/2 z-10 -translate-y-1/2 tracking-[-0.01em] text-(--ink)"
+              >
+                {plainRow}
+              </div>
+            )}
+          </Fragment>
         );
       })}
 

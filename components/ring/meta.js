@@ -201,7 +201,8 @@ const isDark = (hex) => {
  * refs: { groups, list, loader, live, count } — DOM handed over from the
  * component. `groups` is the shape the JSX populates, one entry per side:
  * the box, the mask (`goo`) with its two melting rows, the ink layer over
- * it, and the steady row.
+ * it, and the steady row — which on the right has a box of its own
+ * (`plainBox`) over the ring, while the melt's box sits under it.
  */
 export function createMeta(refs, params) {
   const { groups, loader, live, count } = refs;
@@ -284,16 +285,21 @@ export function createMeta(refs, params) {
       // The left group is the name; the right is discipline and year.
       const isTitle = side === "left";
       g.box.style.display = "";
+      if (g.plainBox) g.plainBox.style.display = "";
 
       const rowPx = isTitle ? titlePx : metaPx;
       g.blur = isTitle ? titlePx * params.titleBlur : params.nameBlur;
       // Roomy, because this box is what the filters are measured off and the
-      // blur needs somewhere to go. Even and whole, like every edge of the
-      // box below: the box blends onto the room, and a blended box on a
-      // fraction of a pixel has its backdrop resampled, which showed as a
-      // hairline round it and the paper's grain smoothed inside it.
-      const h = 2 * Math.round(rowPx * 1.5);
+      // blur needs somewhere to go: three rows for the name, five for the
+      // block, whose smear is wider than its type. Even and whole, like
+      // every edge of the box below: the box blends onto the room, and a
+      // blended box on a fraction of a pixel has its backdrop resampled,
+      // which showed as a hairline round it and the paper's grain smoothed
+      // inside it.
+      const h = 2 * Math.round(rowPx * (isTitle ? 1.5 : 2.5));
       g.box.style.height = `${h}px`;
+      // Room either side of the block's words for the same smear.
+      let pad = 0;
 
       if (isTitle) {
         // The name: full width, centred on the card, its foot a gap above the
@@ -312,15 +318,31 @@ export function createMeta(refs, params) {
         g.box.style.zIndex = "-1";
       } else {
         // Discipline and year, under the counter: right of the card, or on a
-        // phone under it.
-        g.box.style.width = `${Math.round(Math.max(160, blockW))}px`;
-        g.box.style.left = `${Math.round(blockX)}px`;
-        g.box.style.right = "auto";
-        g.box.style.top = `${Math.round(midY + metaPx * 0.75)}px`;
-        g.box.style.bottom = "";
-        g.box.style.transform = "";
-        g.box.style.translate = "";
-        g.box.style.zIndex = "";
+        // phone under it. The melt's box is padded all round and clips to
+        // its own ground, because a smear that spilled past the box had no
+        // ground and no ink under it and read as a halo round the block (a
+        // white blob, on iOS). It sits under the ring like the name's, where
+        // the blend has only the room beneath it; the steady row keeps a
+        // box of its own over the ring, on the same geometry, so at rest
+        // nothing has moved.
+        pad = Math.round(rowPx * 2);
+        const left = Math.round(blockX - pad);
+        const width = Math.round(Math.max(160, blockW) + 2 * pad);
+        const top = Math.round(midY + metaPx * 0.75 - h * 0.5);
+        for (const box of [g.box, g.plainBox]) {
+          if (!box) continue;
+          box.style.width = `${width}px`;
+          box.style.left = `${left}px`;
+          box.style.right = "auto";
+          box.style.top = `${top}px`;
+          box.style.bottom = "";
+          box.style.height = `${h}px`;
+          box.style.transform = "none";
+          box.style.translate = "none";
+        }
+        g.box.style.zIndex = "-1";
+        g.box.style.overflow = "hidden";
+        if (g.plainBox) g.plainBox.style.zIndex = "";
       }
 
       // All three rows, the steady one included. They have to agree exactly or
@@ -335,6 +357,7 @@ export function createMeta(refs, params) {
         row.style.gap = isTitle
           ? "0"
           : `${Math.max(metaPx * 0.6, (params.metaGapR * viewW) / 100)}px`;
+        row.style.paddingLeft = pad ? `${pad}px` : "";
         // On the steady row, not the words: the morph owns the words'
         // opacity, and the melting rows are a mask, dimmed through the ink.
         row.style.opacity =

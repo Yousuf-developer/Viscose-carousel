@@ -405,6 +405,11 @@ of its own and can snap a pixel short of the box, and ink multiplied over
 nothing is ink, a hairline round the block), and `meta.style()` rounds every
 edge of the box to a whole, even pixel, because a blended box on a fraction
 of a pixel has its backdrop resampled, which showed as the same hairline.
+The block (discipline, year) is split: its melt lives in a padded box that
+clips to its own ground and sits under the ring like the name's, and its
+steady row in a box of its own over the ring on the same geometry. A smear
+that spilled past the block's small box had no ground and no ink under it,
+which read as a halo round the block and, on iOS, as a white blob.
 
 **The side-card focus is one frame stale, deliberately.** The hit test that
 decides which card is hovered runs _inside_ the layout loop, but every plane
